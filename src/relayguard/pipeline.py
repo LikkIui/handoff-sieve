@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
-import re
 from pathlib import Path
 from typing import Any, Literal
 
 from relayguard.exceptions import (
+    AmbiguousRouteError,
+    ConfigurationError,
     PolicyExecutionError,
     RelayGuardError,
     ReservedFieldError,
@@ -28,6 +30,7 @@ class PolicyRule:
     sender: str
     receiver: str
     policies: tuple[Policy, ...]
+    rule_id: str = ""
 
     def matches(self, sender: str, receiver: str) -> bool:
         return fnmatchcase(sender, self.sender) and fnmatchcase(receiver, self.receiver)
@@ -43,13 +46,23 @@ class HandoffPipeline:
         rules: Sequence[PolicyRule] | None = None,
         token_counter: TokenCounter | None = None,
         on_unmatched: Literal["error", "warn", "pass"] = "error",
+        on_multiple_match: Literal["error", "first", "all"] = "error",
     ) -> None:
         if on_unmatched not in {"error", "warn", "pass"}:
             raise ValueError("on_unmatched must be 'error', 'warn', or 'pass'")
+        if on_multiple_match not in {"error", "first", "all"}:
+            raise ValueError("on_multiple_match must be 'error', 'first', or 'all'")
         self.policies = list(policies or [])
         self.rules = list(rules or [])
         self.token_counter = token_counter or ApproxTokenCounter()
         self.on_unmatched = on_unmatched
+        self.on_multiple_match = on_multiple_match
+        self._validate_policy_order(self.policies, location="global policies")
+        for index, rule in enumerate(self.rules):
+            self._validate_policy_order(
+                rule.policies,
+                location=f"rule {rule.rule_id or index + 1}",
+            )
 
     @classmethod
     def from_yaml(
@@ -57,7 +70,7 @@ class HandoffPipeline:
         path: str | Path,
         *,
         token_counter: TokenCounter | None = None,
-    ) -> "HandoffPipeline":
+    ) -> HandoffPipeline:
         """Load a pipeline from a safe, built-in-only YAML configuration."""
 
         from relayguard.config import load_config
@@ -68,6 +81,7 @@ class HandoffPipeline:
             rules=loaded.rules,
             token_counter=token_counter,
             on_unmatched=loaded.on_unmatched,
+            on_multiple_match=loaded.on_multiple_match,
         )
 
     def process_envelope(self, envelope: HandoffEnvelope) -> HandoffResult:
@@ -94,28 +108,65 @@ class HandoffPipeline:
         )
         try:
             report.original_tokens = self.token_counter.count_envelope(current)
-        except Exception as error:
-            code = self._exception_code(error)
+        except Exception as count_error:
+            code = self._exception_code(count_error)
             self._mark_denied(report, policy="token_counter", code=code)
-            if isinstance(error, RelayGuardError):
-                error.report = report
+            if isinstance(count_error, RelayGuardError):
+                count_error.report = report
                 raise
             raise PolicyExecutionError(
                 f"Token counting denied the handoff ({code}).",
                 report=report,
-            ) from error
+            ) from count_error
         context = PolicyContext(token_counter=self.token_counter, report=report)
 
         active_policies = list(self.policies)
-        matching_rules = [
-            rule
-            for rule in self.rules
+        all_matching_rules = [
+            (index, rule)
+            for index, rule in enumerate(self.rules)
             if rule.matches(current.sender, current.receiver)
         ]
-        for rule in matching_rules:
+        all_rule_ids = [
+            rule.rule_id or f"rule-{index + 1}" for index, rule in all_matching_rules
+        ]
+        if len(all_matching_rules) > 1 and self.on_multiple_match == "error":
+            report.add_event(
+                "config",
+                "route_ambiguous",
+                count=len(all_matching_rules),
+                details={"rule_ids": all_rule_ids},
+            )
+            route_error = AmbiguousRouteError(
+                "Multiple policy rules matched this handoff; set "
+                "on_multiple_match to 'first' or 'all' only when intentional."
+            )
+            self._mark_denied(
+                report,
+                policy="config",
+                code="ambiguous_route",
+            )
+            route_error.report = report
+            raise route_error
+        matching_rules = (
+            all_matching_rules[:1]
+            if self.on_multiple_match == "first"
+            else all_matching_rules
+        )
+        for _, rule in matching_rules:
             active_policies.extend(rule.policies)
         if matching_rules:
-            report.add_event("config", "rules_matched", count=len(matching_rules))
+            applied_rule_ids = [
+                rule.rule_id or f"rule-{index + 1}" for index, rule in matching_rules
+            ]
+            report.add_event(
+                "config",
+                "rules_matched",
+                count=len(matching_rules),
+                details={
+                    "rule_ids": applied_rule_ids,
+                    "multiple_match_behavior": self.on_multiple_match,
+                },
+            )
         elif self.rules:
             report.add_event(
                 "config",
@@ -127,43 +178,57 @@ class HandoffPipeline:
                 f"{current.receiver!r}."
             )
             if self.on_unmatched == "error":
-                error = UnmatchedRouteError(message)
+                unmatched_error = UnmatchedRouteError(message)
                 self._mark_denied(
                     report,
                     policy="config",
                     code="unmatched_route",
                 )
-                error.report = report
-                raise error
+                unmatched_error.report = report
+                raise unmatched_error
             if self.on_unmatched == "warn":
                 report.warnings.append(message)
+
+        try:
+            self._validate_policy_order(
+                active_policies,
+                location="active handoff policies",
+            )
+        except ConfigurationError as order_error:
+            self._mark_denied(
+                report,
+                policy="config",
+                code="unsafe_policy_order",
+            )
+            order_error.report = report
+            raise
 
         for policy in active_policies:
             try:
                 current = policy.apply(current, context)
-            except Exception as error:
-                code = self._exception_code(error)
+            except Exception as policy_error:
+                code = self._exception_code(policy_error)
                 self._mark_denied(report, policy=policy.name, code=code)
-                if isinstance(error, RelayGuardError):
-                    error.report = report
+                if isinstance(policy_error, RelayGuardError):
+                    policy_error.report = report
                     raise
                 raise PolicyExecutionError(
                     f"Policy {policy.name!r} denied the handoff ({code}).",
                     report=report,
-                ) from error
+                ) from policy_error
 
         try:
             report.transmitted_tokens = self.token_counter.count_envelope(current)
-        except Exception as error:
-            code = self._exception_code(error)
+        except Exception as transmitted_count_error:
+            code = self._exception_code(transmitted_count_error)
             self._mark_denied(report, policy="token_counter", code=code)
-            if isinstance(error, RelayGuardError):
-                error.report = report
+            if isinstance(transmitted_count_error, RelayGuardError):
+                transmitted_count_error.report = report
                 raise
             raise PolicyExecutionError(
                 f"Token counting denied the handoff ({code}).",
                 report=report,
-            ) from error
+            ) from transmitted_count_error
         return HandoffResult(envelope=current, report=report)
 
     @staticmethod
@@ -171,6 +236,37 @@ class HandoffPipeline:
         name = type(error).__name__
         snake = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
         return snake.removesuffix("_error") or "policy_error"
+
+    @staticmethod
+    def _validate_policy_order(
+        policies: Sequence[Policy],
+        *,
+        location: str,
+    ) -> None:
+        ranks = {
+            "preserve": 10,
+            "redact": 20,
+            "schema": 25,
+            "deduplicate": 30,
+            "select": 40,
+            "summarize": 40,
+            "budget": 50,
+        }
+        previous_rank = -1
+        previous_name = ""
+        for policy in policies:
+            name = policy.name
+            rank = ranks.get(name)
+            if rank is None:
+                continue
+            if rank < previous_rank:
+                raise ConfigurationError(
+                    f"Unsafe policy order in {location}: {name!r} cannot run "
+                    f"after {previous_name!r}. Recommended order is preserve, "
+                    "redact, schema, deduplicate, select or summarize, budget."
+                )
+            previous_rank = rank
+            previous_name = name
 
     @staticmethod
     def _mark_denied(
@@ -207,21 +303,21 @@ class HandoffPipeline:
                 messages=normalized,
                 metadata=metadata or {},
             )
-        except Exception as error:
+        except Exception as normalization_error:
             report = AuditReport(
                 sender=str(sender),
                 receiver=str(receiver),
                 token_counter=self.token_counter.name,
             )
-            code = self._exception_code(error)
+            code = self._exception_code(normalization_error)
             self._mark_denied(report, policy="normalization", code=code)
-            if isinstance(error, RelayGuardError):
-                error.report = report
+            if isinstance(normalization_error, RelayGuardError):
+                normalization_error.report = report
                 raise
             raise PolicyExecutionError(
                 f"Input normalization denied the handoff ({code}).",
                 report=report,
-            ) from error
+            ) from normalization_error
         return self.process_envelope(envelope)
 
     @staticmethod

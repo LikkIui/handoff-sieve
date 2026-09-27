@@ -98,11 +98,12 @@ class AuditReport(BaseModel):
             f"protected messages: {self.protected_messages}",
         ]
         if self.summarizer_input_tokens or self.summarizer_output_tokens:
+            net_saved = self.estimated_net_tokens_saved
             lines.extend(
                 [
                     f"summarizer input tokens: {self.summarizer_input_tokens:,}",
                     f"summarizer output tokens: {self.summarizer_output_tokens:,}",
-                    f"net tokens saved (estimated): {self.estimated_net_tokens_saved:,}",
+                    f"net tokens saved (estimated): {net_saved:,}",
                 ]
             )
         if self.warnings:
@@ -110,4 +111,3 @@ class AuditReport(BaseModel):
         if self.failure_code:
             lines.append(f"failure: {self.failure_code}")
         return "\n".join(lines)
-

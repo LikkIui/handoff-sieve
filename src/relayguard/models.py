@@ -91,4 +91,3 @@ class HandoffResult(BaseModel):
         """Return processed messages for convenient framework integration."""
 
         return self.envelope.messages
-

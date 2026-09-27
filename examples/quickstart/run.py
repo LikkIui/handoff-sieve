@@ -4,7 +4,6 @@ from pathlib import Path
 
 from relayguard import HandoffPipeline, Message
 
-
 HERE = Path(__file__).resolve().parent
 
 
@@ -39,4 +38,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

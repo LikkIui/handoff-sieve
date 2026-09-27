@@ -101,9 +101,7 @@ class OpenAIHandoffFilter:
         )
         if is_control:
             message._mark_protected()
-        message._replace_internal(
-            {"source_index": source_index, "segment": segment}
-        )
+        message._replace_internal({"source_index": source_index, "segment": segment})
         return message
 
     @staticmethod
@@ -178,7 +176,9 @@ class OpenAIHandoffFilter:
             )
         return tuple(wrapped)
 
-    def _process_run_items(self, items: tuple[Any, ...], input_item_type: type) -> tuple[Any, ...]:
+    def _process_run_items(
+        self, items: tuple[Any, ...], input_item_type: type
+    ) -> tuple[Any, ...]:
         if not items:
             return ()
         raw_items = tuple(item.to_input_item() for item in items)

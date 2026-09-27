@@ -48,4 +48,3 @@ class ExactDedupPolicy(Policy):
         context.report.duplicates_removed += removed
         context.report.add_event(self.name, "duplicates_removed", count=removed)
         return output
-

@@ -30,4 +30,3 @@ class Policy(ABC):
         context: PolicyContext,
     ) -> HandoffEnvelope:
         """Return a processed copy of ``envelope``."""
-

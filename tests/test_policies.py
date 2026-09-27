@@ -9,17 +9,19 @@ from relayguard import (
     HandoffPipeline,
     Message,
     PolicyExecutionError,
+    RedactionError,
     RelayGuardError,
 )
+from relayguard.exceptions import ConfigurationError
 from relayguard.models import Artifact
 from relayguard.policies import (
     BudgetPolicy,
     ExactDedupPolicy,
+    MockSummarizer,
     PreservePolicy,
     RedactPolicy,
     SchemaPolicy,
     SelectPolicy,
-    MockSummarizer,
     SummarizePolicy,
     Summary,
 )
@@ -52,6 +54,46 @@ def test_custom_redaction_pattern() -> None:
     ).process(sender="a", receiver="b", messages=["Track CASE-1234"])
 
     assert result.messages[0].content == "Track [REDACTED:ticket]"
+
+
+def test_redaction_rejects_invalid_custom_regex() -> None:
+    with pytest.raises(ConfigurationError, match="Invalid redaction pattern"):
+        RedactPolicy(detectors=[], custom_patterns={"broken": "("})
+
+
+def test_redaction_denies_input_above_scan_limit_with_a_report() -> None:
+    pipeline = HandoffPipeline([RedactPolicy(detectors=["email"], max_scan_bytes=20)])
+
+    with pytest.raises(RedactionError, match="max_scan_bytes") as captured:
+        pipeline.process(
+            sender="a",
+            receiver="b",
+            messages=["x" * 30],
+        )
+
+    assert captured.value.report is not None
+    assert captured.value.report.status == "denied"
+    assert captured.value.report.failure_code == "redaction"
+    assert captured.value.report.failed_policy == "redact"
+
+
+def test_redaction_times_out_pathological_custom_regex() -> None:
+    pipeline = HandoffPipeline(
+        [
+            RedactPolicy(
+                detectors=[],
+                custom_patterns={"pathological": r"(a+)+$"},
+                timeout_ms=1,
+            )
+        ]
+    )
+
+    with pytest.raises(RedactionError, match="timeout"):
+        pipeline.process(
+            sender="a",
+            receiver="b",
+            messages=["a" * 100_000 + "!"],
+        )
 
 
 def test_exact_dedup_keeps_order() -> None:
@@ -300,11 +342,24 @@ class OversizedSummarizer:
         return Summary(text="too large " * 100)
 
 
+class AsyncSummarizer:
+    async def summarize(self, messages, *, max_tokens, token_counter) -> Summary:
+        return Summary(text="async summary")
+
+
 def test_summarize_rejects_backend_that_breaks_limit() -> None:
-    pipeline = HandoffPipeline(
-        [SummarizePolicy(OversizedSummarizer(), max_tokens=5)]
-    )
+    pipeline = HandoffPipeline([SummarizePolicy(OversizedSummarizer(), max_tokens=5)])
 
     with pytest.raises(RelayGuardError, match="exceeding its limit"):
         pipeline.process(sender="a", receiver="b", messages=["input"])
 
+
+def test_summarize_rejects_async_backend_with_clear_boundary() -> None:
+    pipeline = HandoffPipeline([SummarizePolicy(AsyncSummarizer(), max_tokens=20)])
+
+    with pytest.raises(RelayGuardError, match="Async summarizers") as captured:
+        pipeline.process(sender="a", receiver="b", messages=["input"])
+
+    assert captured.value.report is not None
+    assert captured.value.report.status == "denied"
+    assert captured.value.report.failed_policy == "summarize"

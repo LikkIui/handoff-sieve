@@ -75,12 +75,14 @@ from relayguard.policies import (
     RedactPolicy,
 )
 
-pipeline = HandoffPipeline([
-    PreservePolicy(),
-    RedactPolicy(detectors=["api_key", "email"]),
-    ExactDedupPolicy(),
-    BudgetPolicy(500, strategy="drop_oldest"),
-])
+pipeline = HandoffPipeline(
+    [
+        PreservePolicy(),
+        RedactPolicy(detectors=["api_key", "email"]),
+        ExactDedupPolicy(),
+        BudgetPolicy(500, strategy="drop_oldest"),
+    ]
+)
 
 result = pipeline.process(
     sender="researcher",
@@ -108,9 +110,11 @@ the redacted value.
 ```yaml
 version: 1
 on_unmatched: error
+on_multiple_match: error
 
 rules:
-  - from: researcher
+  - id: researcher-to-writer
+    from: researcher
     to: "writer*"
 
     policies:
@@ -135,6 +139,8 @@ Sender and receiver names support `*` wildcard matching. YAML can only create
 built-in policies; it never imports an arbitrary Python module. When rules are
 configured and none match, RelayGuard rejects the handoff by default. Set
 `on_unmatched` to `warn` or `pass` only when that behavior is intentional.
+Rules need stable, unique IDs. If multiple rules match, the default is also to
+reject; `first` and `all` make the alternative behavior explicit and auditable.
 
 ## Built-in policies
 
@@ -148,9 +154,10 @@ configured and none match, RelayGuard rejects the handoff by default. Set
 | `SchemaPolicy` | Validate structured packets with Pydantic |
 | `SummarizePolicy` | Call a user-provided summarizer for unprotected messages |
 
-Policy order matters. A recommended order is preserve, redact, deduplicate,
-select or summarize, and finally budget. If protected content alone exceeds the
-budget, RelayGuard raises `BudgetExceededError` rather than deleting it.
+Policy order matters. RelayGuard rejects known built-in order inversions. Use
+preserve, redact, schema, deduplicate, select or summarize, and finally budget.
+If protected content alone exceeds the budget, RelayGuard raises
+`BudgetExceededError` rather than deleting it.
 
 `protected` and adapter reconstruction data are private processing state. They
 cannot be supplied through a public `Message` or mapping input. Unknown fields
@@ -204,6 +211,10 @@ YAML does not instantiate a summarizer because doing so would require silently
 loading credentials or executable provider code. Construct that policy in
 Python instead.
 
+The current pipeline and `Summarizer` protocol are synchronous. RelayGuard
+rejects an async summarizer with a denied audit report instead of leaving an
+unawaited coroutine or blocking an event loop implicitly.
+
 ## OpenAI Agents SDK
 
 Install the optional dependency:
@@ -256,6 +267,8 @@ The Failure Zoo examples are executable assertions, not benchmark claims.
 
 - Pattern redaction is best effort and is not a complete data-loss-prevention
   system.
+- Regex compilation, scan volume, and execution time are bounded. Exceeding a
+  bound denies the handoff instead of silently skipping redaction.
 - The default token counter is an estimate, not a provider invoice.
 - Exact deduplication is intentionally not semantic deduplication.
 - The offline mock summarizer does not measure semantic quality.
@@ -263,6 +276,13 @@ The Failure Zoo examples are executable assertions, not benchmark claims.
   length.
 
 See [SECURITY.md](SECURITY.md) before using RelayGuard with sensitive data.
+
+Detailed references:
+
+- [Configuration](docs/configuration.md)
+- [Custom policies](docs/custom-policies.md)
+- [OpenAI adapter support matrix](docs/openai-adapter.md)
+- [Threat model](docs/threat-model.md)
 
 ## Roadmap
 

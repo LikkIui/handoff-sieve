@@ -83,4 +83,3 @@ class TiktokenCounter(ApproxTokenCounter):
 
     def count_text(self, text: str) -> int:
         return len(self.encoding.encode(text)) if text else 0
-

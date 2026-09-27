@@ -33,8 +33,16 @@ class UnmatchedRouteError(RelayGuardError):
     """Raised when a configured rule set has no matching handoff route."""
 
 
+class AmbiguousRouteError(RelayGuardError):
+    """Raised when multiple policy routes match without an explicit strategy."""
+
+
 class ReservedFieldError(RelayGuardError):
     """Raised when untrusted input attempts to set internal processing state."""
+
+
+class RedactionError(RelayGuardError):
+    """Raised when redaction cannot complete within configured safety limits."""
 
 
 class PolicyExecutionError(RelayGuardError):

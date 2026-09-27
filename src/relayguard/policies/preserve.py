@@ -46,4 +46,3 @@ class PreservePolicy(Policy):
         context.report.protected_messages += protected
         context.report.add_event(self.name, "protected", count=protected)
         return output
-

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+from inspect import isawaitable
 from typing import Protocol
 
 from relayguard.exceptions import RelayGuardError
@@ -102,6 +103,14 @@ class SummarizePolicy(Policy):
             max_tokens=self.max_tokens,
             token_counter=context.token_counter,
         )
+        if isawaitable(summary):
+            close = getattr(summary, "close", None)
+            if callable(close):
+                close()
+            raise RelayGuardError(
+                "Async summarizers are not supported by the synchronous "
+                "HandoffPipeline. Provide a synchronous summarizer backend."
+            )
         actual_input_tokens = sum(
             context.token_counter.count_message(message) for message in candidates
         )

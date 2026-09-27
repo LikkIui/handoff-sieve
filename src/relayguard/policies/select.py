@@ -53,4 +53,3 @@ class SelectPolicy(Policy):
         context.report.removed_messages += removed
         context.report.add_event(self.name, "selected", count=removed)
         return output
-

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from relayguard import HandoffPipeline
@@ -20,9 +22,7 @@ def test_openai_adapter_processes_raw_history_without_sdk() -> None:
 
     processed = adapter._process_history(history)
 
-    assert processed == (
-        {"role": "user", "content": "Email [REDACTED:email]"},
-    )
+    assert processed == ({"role": "user", "content": "Email [REDACTED:email]"},)
     assert adapter.last_reports[0].redactions == 2
     assert adapter.last_reports[0].duplicates_removed == 1
 
@@ -39,6 +39,32 @@ def test_openai_adapter_marks_tool_items_as_protected() -> None:
 
     assert message.protected is True
     assert "openai_control" in message.tags
+
+
+def test_openai_adapter_reports_do_not_leak_between_threads() -> None:
+    adapter = OpenAIHandoffFilter(
+        HandoffPipeline([RedactPolicy(detectors=["email"])]),
+        sender="triage",
+        receiver="specialist",
+    )
+
+    def run(content: str) -> tuple[str, int, str]:
+        processed = adapter._process_history(({"role": "user", "content": content},))
+        report = adapter.last_reports[0]
+        return processed[0]["content"], report.redactions, report.handoff_id
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        secret = executor.submit(run, "Email alice@example.com")
+        ordinary = executor.submit(run, "No secret here")
+        secret_result = secret.result()
+        ordinary_result = ordinary.result()
+
+    assert secret_result[0] == "Email [REDACTED:email]"
+    assert secret_result[1] == 1
+    assert ordinary_result[0] == "No secret here"
+    assert ordinary_result[1] == 0
+    assert secret_result[2] != ordinary_result[2]
+    assert adapter.last_reports == []
 
 
 def test_openai_sdk_adapter_enforces_one_budget_across_all_segments() -> None:

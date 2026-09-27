@@ -11,7 +11,11 @@ def test_pipeline_normalizes_common_inputs() -> None:
     result = HandoffPipeline().process(
         sender="a",
         receiver="b",
-        messages=["plain", {"content": "assistant text", "role": "assistant"}, {"x": 1}],
+        messages=[
+            "plain",
+            {"content": "assistant text", "role": "assistant"},
+            {"x": 1},
+        ],
     )
 
     assert [message.content for message in result.messages] == [
@@ -105,4 +109,3 @@ def test_optional_tiktoken_counter_when_installed(monkeypatch) -> None:
 
     assert result.report.token_counter == "tiktoken:gpt-4o-mini"
     assert result.report.original_tokens > 0
-

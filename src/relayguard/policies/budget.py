@@ -51,7 +51,9 @@ class BudgetPolicy(Policy):
             )
 
         candidate_indices = [
-            index for index, message in enumerate(output.messages) if not message.protected
+            index
+            for index, message in enumerate(output.messages)
+            if not message.protected
         ]
         if self.strategy == "drop_largest":
             candidate_indices.sort(
@@ -100,4 +102,3 @@ class BudgetPolicy(Policy):
             },
         )
         return output
-

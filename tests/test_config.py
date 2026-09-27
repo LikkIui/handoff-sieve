@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 
 from relayguard import HandoffPipeline, Message
-from relayguard.exceptions import ConfigurationError, UnmatchedRouteError
+from relayguard.exceptions import (
+    AmbiguousRouteError,
+    ConfigurationError,
+    UnmatchedRouteError,
+)
 
 
 def write_config(path: Path, content: str) -> Path:
@@ -99,6 +103,94 @@ policies:
     )
 
     with pytest.raises(ConfigurationError, match="Unknown policy"):
+        HandoffPipeline.from_yaml(config)
+
+
+def test_overlapping_rules_fail_closed_by_default(tmp_path: Path) -> None:
+    config = write_config(
+        tmp_path / "overlap.yaml",
+        """
+version: 1
+rules:
+  - id: broad
+    from: "*"
+    to: writer
+    policies:
+      - redact:
+          detect: [email]
+  - id: exact
+    from: researcher
+    to: writer
+    policies:
+      - deduplicate: exact
+""",
+    )
+    pipeline = HandoffPipeline.from_yaml(config)
+
+    with pytest.raises(AmbiguousRouteError) as captured:
+        pipeline.process(
+            sender="researcher",
+            receiver="writer",
+            messages=["alice@example.com"],
+        )
+
+    assert captured.value.report is not None
+    assert captured.value.report.failure_code == "ambiguous_route"
+    assert captured.value.report.events[0].details["rule_ids"] == [
+        "broad",
+        "exact",
+    ]
+
+
+def test_overlapping_rules_can_apply_all_in_declaration_order(tmp_path: Path) -> None:
+    config = write_config(
+        tmp_path / "overlap.yaml",
+        """
+version: 1
+on_multiple_match: all
+rules:
+  - id: broad
+    from: "*"
+    to: writer
+    policies:
+      - redact:
+          detect: [email]
+  - id: exact
+    from: researcher
+    to: writer
+    policies:
+      - deduplicate: exact
+""",
+    )
+    pipeline = HandoffPipeline.from_yaml(config)
+
+    result = pipeline.process(
+        sender="researcher",
+        receiver="writer",
+        messages=["alice@example.com", "alice@example.com"],
+    )
+
+    assert [message.content for message in result.messages] == ["[REDACTED:email]"]
+    assert result.report.events[0].details == {
+        "rule_ids": ["broad", "exact"],
+        "multiple_match_behavior": "all",
+    }
+
+
+def test_yaml_rejects_unsafe_policy_order(tmp_path: Path) -> None:
+    config = write_config(
+        tmp_path / "unsafe-order.yaml",
+        """
+version: 1
+policies:
+  - budget:
+      max_tokens: 100
+  - redact:
+      detect: [email]
+""",
+    )
+
+    with pytest.raises(ConfigurationError, match="Unsafe policy order"):
         HandoffPipeline.from_yaml(config)
 
 

@@ -26,6 +26,7 @@ class LoadedConfig:
     policies: tuple[Policy, ...]
     rules: tuple[PolicyRule, ...]
     on_unmatched: Literal["error", "warn", "pass"]
+    on_multiple_match: Literal["error", "first", "all"]
 
 
 def _mapping(value: Any, location: str) -> dict[str, Any]:
@@ -44,9 +45,7 @@ def _check_unknown(config: dict[str, Any], allowed: set[str], location: str) -> 
 
 def _build_policy(spec: Any, location: str) -> Policy:
     if not isinstance(spec, dict) or len(spec) != 1:
-        raise ConfigurationError(
-            f"{location} must contain exactly one policy name"
-        )
+        raise ConfigurationError(f"{location} must contain exactly one policy name")
     name, raw_config = next(iter(spec.items()))
 
     if name == "deduplicate":
@@ -56,11 +55,27 @@ def _build_policy(spec: Any, location: str) -> Policy:
 
     config = _mapping(raw_config, f"{location}.{name}")
     if name == "redact":
-        _check_unknown(config, {"detect", "detectors", "custom_patterns"}, location)
+        _check_unknown(
+            config,
+            {
+                "detect",
+                "detectors",
+                "custom_patterns",
+                "max_pattern_bytes",
+                "max_scan_bytes",
+                "max_scan_strings",
+                "timeout_ms",
+            },
+            location,
+        )
         detectors = config.get("detect", config.get("detectors", ["api_key", "email"]))
         return RedactPolicy(
             detectors=detectors,
             custom_patterns=config.get("custom_patterns"),
+            max_pattern_bytes=config.get("max_pattern_bytes", 1_000),
+            max_scan_bytes=config.get("max_scan_bytes", 1_000_000),
+            max_scan_strings=config.get("max_scan_strings", 10_000),
+            timeout_ms=config.get("timeout_ms", 50),
         )
     if name == "select":
         _check_unknown(config, {"roles", "kinds", "tags"}, location)
@@ -94,8 +109,7 @@ def _build_policies(raw: Any, location: str) -> tuple[Policy, ...]:
     if not isinstance(raw, list):
         raise ConfigurationError(f"{location} must be a list")
     return tuple(
-        _build_policy(item, f"{location}[{index}]")
-        for index, item in enumerate(raw)
+        _build_policy(item, f"{location}[{index}]") for index, item in enumerate(raw)
     )
 
 
@@ -108,15 +122,20 @@ def load_config(path: str | Path) -> LoadedConfig:
     except (OSError, yaml.YAMLError) as exc:
         raise ConfigurationError(f"Could not load {config_path}: {exc}") from exc
     root = _mapping(raw, "root")
-    _check_unknown(root, {"version", "policies", "rules", "on_unmatched"}, "root")
+    _check_unknown(
+        root,
+        {"version", "policies", "rules", "on_unmatched", "on_multiple_match"},
+        "root",
+    )
     if root.get("version", 1) != 1:
         raise ConfigurationError("Only configuration version 1 is supported")
 
     on_unmatched = root.get("on_unmatched", "error")
     if on_unmatched not in {"error", "warn", "pass"}:
-        raise ConfigurationError(
-            "on_unmatched must be 'error', 'warn', or 'pass'"
-        )
+        raise ConfigurationError("on_unmatched must be 'error', 'warn', or 'pass'")
+    on_multiple_match = root.get("on_multiple_match", "error")
+    if on_multiple_match not in {"error", "first", "all"}:
+        raise ConfigurationError("on_multiple_match must be 'error', 'first', or 'all'")
 
     global_policies = _build_policies(root.get("policies"), "policies")
     raw_rules = root.get("rules", [])
@@ -124,17 +143,25 @@ def load_config(path: str | Path) -> LoadedConfig:
         raise ConfigurationError("rules must be a list")
 
     rules: list[PolicyRule] = []
+    rule_ids: set[str] = set()
     for index, raw_rule in enumerate(raw_rules):
         location = f"rules[{index}]"
         rule = _mapping(raw_rule, location)
-        _check_unknown(rule, {"from", "to", "policies"}, location)
+        _check_unknown(rule, {"id", "from", "to", "policies"}, location)
         if "policies" not in rule:
             raise ConfigurationError(f"{location} requires policies")
+        rule_id = rule.get("id", f"rule-{index + 1}")
+        if not isinstance(rule_id, str) or not rule_id.strip():
+            raise ConfigurationError(f"{location}.id must be a non-empty string")
+        if rule_id in rule_ids:
+            raise ConfigurationError(f"Duplicate rule id {rule_id!r}")
+        rule_ids.add(rule_id)
         rules.append(
             PolicyRule(
                 sender=str(rule.get("from", "*")),
                 receiver=str(rule.get("to", "*")),
                 policies=_build_policies(rule["policies"], f"{location}.policies"),
+                rule_id=rule_id,
             )
         )
 
@@ -142,4 +169,5 @@ def load_config(path: str | Path) -> LoadedConfig:
         policies=global_policies,
         rules=tuple(rules),
         on_unmatched=cast(Literal["error", "warn", "pass"], on_unmatched),
+        on_multiple_match=cast(Literal["error", "first", "all"], on_multiple_match),
     )

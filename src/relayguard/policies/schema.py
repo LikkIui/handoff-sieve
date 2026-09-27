@@ -29,9 +29,9 @@ class SchemaPolicy(Policy):
             raise ValueError("schema or required_fields must be provided")
         if schema is not None and fields:
             raise ValueError("provide schema or required_fields, not both")
-        self.schema = schema or create_model(
-            "InlineHandoffSchema",
-            **{field: (Any, ...) for field in fields},
+        field_definitions: dict[str, Any] = {field: (Any, ...) for field in fields}
+        self.schema: type[BaseModel] = schema or create_model(
+            "InlineHandoffSchema", **field_definitions
         )
         self.kinds = set(kinds or ["structured"])
         self.normalize = normalize
@@ -63,7 +63,7 @@ class SchemaPolicy(Policy):
         ):
             changed = abs(len(before) - len(after))
             removed = 0
-            for before_item, after_item in zip(before, after):
+            for before_item, after_item in zip(before, after, strict=False):
                 nested_changed, nested_removed = cls._diff_counts(
                     before_item, after_item
                 )

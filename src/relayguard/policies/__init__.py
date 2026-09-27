@@ -22,5 +22,3 @@ __all__ = [
     "SummarizePolicy",
     "Summary",
 ]
-
-

@@ -1,8 +1,10 @@
 """RelayGuard public API."""
 
 from relayguard.exceptions import (
+    AmbiguousRouteError,
     BudgetExceededError,
     PolicyExecutionError,
+    RedactionError,
     RelayGuardError,
     ReservedFieldError,
     UnmatchedRouteError,
@@ -13,6 +15,7 @@ from relayguard.report import AuditEvent, AuditReport
 from relayguard.tokens import ApproxTokenCounter, TiktokenCounter, TokenCounter
 
 __all__ = [
+    "AmbiguousRouteError",
     "ApproxTokenCounter",
     "AuditEvent",
     "AuditReport",
@@ -22,6 +25,7 @@ __all__ = [
     "HandoffResult",
     "Message",
     "PolicyExecutionError",
+    "RedactionError",
     "RelayGuardError",
     "ReservedFieldError",
     "TokenCounter",
@@ -30,4 +34,3 @@ __all__ = [
 ]
 
 __version__ = "0.1.0"
-

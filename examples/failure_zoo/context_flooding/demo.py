@@ -5,7 +5,9 @@ from relayguard.policies import BudgetPolicy, PreservePolicy
 
 
 def main() -> None:
-    messages = [f"Verbose research note {index}: " + "background " * 30 for index in range(20)]
+    messages = [
+        f"Verbose research note {index}: " + "background " * 30 for index in range(20)
+    ]
     messages.append(
         Message(
             content="The final answer must include citations.",
@@ -31,4 +33,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

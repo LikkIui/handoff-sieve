@@ -1,0 +1,78 @@
+# RelayGuard configuration
+
+RelayGuard accepts policies directly in Python or from safe YAML. YAML only
+constructs built-in policies and never imports a module named by the file.
+
+## Root options
+
+```yaml
+version: 1
+on_unmatched: error
+on_multiple_match: error
+```
+
+`on_unmatched` controls a rule set with no matching route:
+
+- `error` denies the handoff and is the default;
+- `warn` applies global policies and adds an audit warning;
+- `pass` applies global policies without a warning.
+
+`on_multiple_match` controls overlapping rules:
+
+- `error` denies an ambiguous route and is the default;
+- `first` applies the first matching rule in declaration order;
+- `all` concatenates every matching rule in declaration order.
+
+Every rule should have a stable, unique `id`. Missing IDs become `rule-1`,
+`rule-2`, and so on. Audit events record the IDs actually applied.
+
+```yaml
+rules:
+  - id: researcher-to-writer
+    from: researcher
+    to: "writer*"
+    policies: []
+```
+
+Sender and receiver matching is case-sensitive and supports `*` wildcards.
+When `all` combines rules, the resulting policy sequence must still pass the
+order check.
+
+## Policy order
+
+RelayGuard validates this order for built-in policies:
+
+1. `preserve`
+2. `redact`
+3. `schema`
+4. `deduplicate`
+5. `select` or `summarize`
+6. `budget`
+
+Equal-rank operations may repeat. Unknown custom Python policies are not
+reordered automatically. A built-in inversion raises `ConfigurationError`.
+
+## Redaction limits
+
+```yaml
+- redact:
+    detect: [api_key, email, phone]
+    custom_patterns:
+      ticket: 'CASE-\d+'
+    max_pattern_bytes: 1000
+    max_scan_bytes: 1000000
+    max_scan_strings: 10000
+    timeout_ms: 50
+```
+
+Detector names use 1–64 ASCII letters, digits, dots, underscores, or hyphens.
+At most 32 custom patterns are accepted. Invalid patterns fail during
+configuration. A scan limit or regex timeout denies the handoff and attaches a
+denied audit report; RelayGuard never treats an incomplete scan as success.
+
+## Failure reports
+
+Policy, route, normalization, and token-count failures raise a
+`RelayGuardError` with `error.report`. The report contains a unique
+`handoff_id`, `status="denied"`, `failure_code`, and `failed_policy`. It does
+not store the removed or redacted source value.

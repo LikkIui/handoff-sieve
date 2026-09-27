@@ -9,6 +9,8 @@ detected.
 - Built-in detectors are pattern based and can produce false positives or
   false negatives.
 - Custom application secrets require custom patterns.
+- Custom regex compilation, total scanned bytes/strings, and per-match runtime
+  are bounded. A limit or timeout denies the handoff with an audit report.
 - Summarizers can reproduce sensitive input unless redaction runs first.
 - Audit reports intentionally store counts and policy names, not removed or
   redacted source text.

@@ -1,6 +1,6 @@
 # RelayGuard 项目计划（接手修订版）
 
-> 状态：执行中（工作包 A/B 已完成首轮）
+> 状态：执行中（工作包 A/B 已完成，C/D 加固进行中）
 > 修订日期：2026-09-27  
 > 当前名称：RelayGuard 仅作为内部代号，正式发布名称尚未确定。
 
@@ -13,13 +13,14 @@
 - 将本计划纳入 `docs/`，并把 CI 工作流移到 GitHub 可识别的根目录；
 - 完成下列 8 项 P0 加固，并增加相应回归测试；
 - 在 Python 3.13 新虚拟环境中安装 core、OpenAI Agents SDK 和 tiktoken 可选依赖；
-- 通过 35 项测试，包括真实 `HandoffInputData` 离线集成测试；
+- 通过 43 项测试，包括真实 `HandoffInputData`、最低/当前 SDK 和并发隔离测试；
 - 成功构建 sdist 与 wheel，并在第二个隔离环境中从 wheel 安装运行。
 
 当前保留事项：
 
 - RelayGuard 仍是内部代号，正式名称和发布坐标尚未决策；
-- P1 中的异步边界、正则资源限制、规则重叠语义和完整能力文档仍待处理；
+- P1 首轮阻塞已关闭；更完整的 SDK tool-pair/不支持模式验收进入工作包 D；
+- Audit exporter、质量 benchmark 和正式命名仍待后续工作包处理；
 - 尚未发布、推送或创建远端版本。
 
 ## 1. 项目判断
@@ -129,14 +130,14 @@ RelayGuard 默认生成只供接收 Agent 使用的 receiver view，并单独返
 7. [x] Schema normalization 审计 changed/removed field count。
 8. [x] handoff report 增加版本、ID、状态和失败码；策略异常携带 denied report。
 
-### P1：Alpha 发布前解决
+### P1：Alpha 发布前解决（首轮已完成）
 
-1. [x] Adapter 的 `last_reports` 已改为 context-local 状态；仍需补并发压力测试。
-2. 缺少 async summarizer/pipeline 路径或明确的同步限制。
-3. 自定义 regex 缺少统一错误包装、大小限制和 ReDoS 风险控制。
-4. overlapping rules 的组合和优先级语义不明确。
-5. CI 已增加 OpenAI 可选依赖和 wheel 安装；lint、类型检查和最低 SDK 版本仍待补齐。
-6. 缺少配置、扩展 Policy、adapter 能力范围和威胁模型文档。
+1. [x] Adapter 报告已改为 context-local 状态，并通过共享实例并发隔离测试。
+2. [x] Alpha 明确使用同步 pipeline；async summarizer 会携带 denied report 明确拒绝。
+3. [x] 自定义 regex 已增加统一错误、数量/大小/扫描上限和逐匹配超时。
+4. [x] overlapping rules 默认拒绝，并支持显式 `first | all` 与稳定 rule ID 审计。
+5. [x] CI 已覆盖 Python 3.10–3.13、OpenAI 0.22.0/0.22.3、tiktoken、wheel、Ruff 和 mypy。
+6. [x] 已补配置、扩展 Policy、adapter 能力矩阵和威胁模型文档。
 7. [x] 已重建虚拟环境并移除嵌套 `.git` 与旧路径依赖。
 
 ## 6. 执行路线
