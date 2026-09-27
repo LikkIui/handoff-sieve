@@ -43,19 +43,24 @@ order check.
 RelayGuard validates this order for built-in policies:
 
 1. `preserve`
-2. `redact`
+2. input `redact`
 3. `schema`
 4. `deduplicate`
 5. `select` or `summarize`
-6. `budget`
+6. optional egress `redact`
+7. `budget`
 
-Equal-rank operations may repeat. Unknown custom Python policies are not
-reordered automatically. A built-in inversion raises `ConfigurationError`.
+Equal-rank operations may repeat. Put custom policies that can change visible
+content before egress redaction. After an egress redaction pass, only another
+egress redaction or the budget may run; no policy may run after the budget.
+RelayGuard raises `ConfigurationError` instead of allowing a late policy to
+bypass either terminal gate.
 
 ## Redaction limits
 
 ```yaml
 - redact:
+    stage: input
     detect: [api_key, email, phone]
     custom_patterns:
       ticket: 'CASE-\d+'
@@ -69,6 +74,10 @@ Detector names use 1–64 ASCII letters, digits, dots, underscores, or hyphens.
 At most 32 custom patterns are accepted. Invalid patterns fail during
 configuration. A scan limit or regex timeout denies the handoff and attaches a
 denied audit report; RelayGuard never treats an incomplete scan as success.
+
+When a summarizer or custom transformation can generate new sensitive text,
+add a second policy with `stage: egress` after that transformation and before
+the hard budget. The audit event records the stage explicitly.
 
 ## Failure reports
 

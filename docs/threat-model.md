@@ -31,7 +31,8 @@ and receiver identifiers, and route names.
 - Pattern detectors do not recognize every secret or personal identifier and
   can redact benign text.
 - Custom regex can be logically wrong even though size and runtime are bounded.
-- A summarizer sees its input. Put redaction before summarization and apply the
+- A summarizer sees its input and can generate a new matching value. Put input
+  redaction before summarization, egress redaction after it, and apply the
   provider's own data controls.
 - Redacting tool arguments or outputs can change tool semantics. Protected
   status prevents deletion, not semantic corruption.

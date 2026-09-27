@@ -33,15 +33,17 @@ Custom policies should follow four rules:
 4. Raise a `RelayGuardError` for an expected denial. The pipeline attaches the
    denied audit report. Unexpected exceptions are wrapped in
    `PolicyExecutionError` and remain available as `__cause__`.
+5. Run every policy that can change receiver-visible content before egress
+   redaction, and run every policy before the hard budget. RelayGuard rejects a
+   custom policy configured after either terminal gate.
 
 Set a stable string `version` on the policy and change it when its audit-relevant
 behavior changes. Events emitted during the policy call are stamped with that
 version, and the version contributes to the pipeline configuration fingerprint.
 
-Built-in order validation cannot infer whether a custom policy reads, removes,
-or sends content. Place custom policies deliberately and add tests for secret
-absence, protected-content retention, budget compliance, and deterministic
-output.
+RelayGuard cannot infer what a custom policy does before the terminal gates.
+Place it deliberately and add tests for secret absence, protected-content
+retention, budget compliance, and deterministic output.
 
 Private methods such as `_mark_protected`, `_replace_internal`, and
 `_process_trusted_envelope` are reserved for RelayGuard policies and reviewed
