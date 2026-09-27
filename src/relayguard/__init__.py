@@ -4,11 +4,13 @@ from relayguard.exceptions import (
     AmbiguousRouteError,
     AuditExportError,
     BudgetExceededError,
+    HandoffIntegrityError,
     PolicyExecutionError,
     RedactionError,
     RelayGuardError,
     ReservedFieldError,
     UnmatchedRouteError,
+    UnsupportedAdapterModeError,
 )
 from relayguard.models import HandoffEnvelope, HandoffResult, Message
 from relayguard.pipeline import HandoffPipeline
@@ -26,6 +28,7 @@ __all__ = [
     "BudgetExceededError",
     "CallbackReporter",
     "HandoffEnvelope",
+    "HandoffIntegrityError",
     "HandoffPipeline",
     "HandoffResult",
     "JsonlReporter",
@@ -37,6 +40,7 @@ __all__ = [
     "TokenCounter",
     "TiktokenCounter",
     "UnmatchedRouteError",
+    "UnsupportedAdapterModeError",
 ]
 
 __version__ = "0.1.0"

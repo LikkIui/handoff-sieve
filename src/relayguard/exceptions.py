@@ -51,3 +51,11 @@ class PolicyExecutionError(RelayGuardError):
 
 class AuditExportError(RelayGuardError):
     """Raised when a successful handoff cannot emit its required audit report."""
+
+
+class HandoffIntegrityError(RelayGuardError):
+    """Raised when an adapter's control-item relationships are invalid."""
+
+
+class UnsupportedAdapterModeError(RelayGuardError):
+    """Raised when an adapter cannot observe a complete safe handoff."""

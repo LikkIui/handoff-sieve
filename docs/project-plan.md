@@ -1,6 +1,6 @@
 # RelayGuard 项目计划（接手修订版）
 
-> 状态：执行中（工作包 A/B/C 已完成，D 加固进行中）
+> 状态：执行中（工作包 A/B/C/D 已完成，下一步进入 E 质量评测）
 > 修订日期：2026-09-27  
 > 当前名称：RelayGuard 仅作为内部代号，正式发布名称尚未确定。
 
@@ -13,7 +13,8 @@
 - 将本计划纳入 `docs/`，并把 CI 工作流移到 GitHub 可识别的根目录；
 - 完成下列 8 项 P0 加固，并增加相应回归测试；
 - 在 Python 3.13 新虚拟环境中安装 core、OpenAI Agents SDK 和 tiktoken 可选依赖；
-- 通过 51 项测试，包括真实 `HandoffInputData`、最低/当前 SDK、并发隔离和审计导出测试；
+- 通过 55 项测试，包括真实 `HandoffInputData`、双 Agent 离线 Runner、
+  最低/当前 SDK、并发隔离、审计导出和 tool call/output 完整性测试；
 - 完成版本化审计合同：关联 ID、时间与耗时、policy 版本、安全配置指纹、
   本地估算/供应商用量分离，以及 callback/JSONL reporter；
 - 成功构建 sdist 与 wheel，并在第二个隔离环境中从 wheel 安装运行。
@@ -21,7 +22,8 @@
 当前保留事项：
 
 - RelayGuard 仍是内部代号，正式名称和发布坐标尚未决策；
-- P1 首轮阻塞已关闭；更完整的 SDK tool-pair/不支持模式验收进入工作包 D；
+- P1 首轮阻塞已关闭；SDK tool-pair、不支持模式和双 Agent 离线端到端 handoff
+  已通过验收；
 - 质量 benchmark 和正式命名仍待后续工作包处理；
 - 尚未发布、推送或创建远端版本。
 
@@ -399,10 +401,11 @@ AutoGen adapter 不作为近期发布阻塞。只有在出现真实使用方或�
 
 ### 工作包 D：OpenAI Adapter
 
-- 完整 handoff 合并预算；
-- 当前 SDK 集成测试；
-- tool-pair integrity；
-- 并发安全与能力矩阵。
+- [x] 完整 handoff 合并预算；
+- [x] 当前 SDK `HandoffInputData` 集成测试；
+- [x] tool-pair integrity；
+- [x] 并发安全与能力矩阵；
+- [x] 双 Agent + 离线测试模型的完整 handoff 验收。
 
 ### 工作包 E：Evaluation
 

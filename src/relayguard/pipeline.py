@@ -131,10 +131,15 @@ class HandoffPipeline:
         envelope: HandoffEnvelope,
         *,
         request_id: str | None = None,
+        final_policies: Sequence[Policy] = (),
     ) -> HandoffResult:
         """Process an envelope whose private state came from a trusted adapter."""
 
-        return self._run_envelope(envelope, request_id=request_id)
+        return self._run_envelope(
+            envelope,
+            request_id=request_id,
+            final_policies=final_policies,
+        )
 
     def _run_envelope(
         self,
@@ -143,6 +148,7 @@ class HandoffPipeline:
         request_id: str | None = None,
         started: float | None = None,
         report: AuditReport | None = None,
+        final_policies: Sequence[Policy] = (),
     ) -> HandoffResult:
         """Run policies, finalize one report, and export it exactly once."""
 
@@ -156,7 +162,11 @@ class HandoffPipeline:
             )
         try:
             current = envelope.model_copy(deep=True)
-            result = self._execute_envelope(current, report)
+            result = self._execute_envelope(
+                current,
+                report,
+                final_policies=final_policies,
+            )
         except Exception as error:
             self._raise_finalized_failure(
                 error,
@@ -173,6 +183,8 @@ class HandoffPipeline:
         self,
         current: HandoffEnvelope,
         report: AuditReport,
+        *,
+        final_policies: Sequence[Policy],
     ) -> HandoffResult:
         """Apply route and policy logic to a private envelope copy."""
 
@@ -273,7 +285,7 @@ class HandoffPipeline:
             order_error.report = report
             raise
 
-        for policy in active_policies:
+        for policy in [*active_policies, *final_policies]:
             event_start = len(report.events)
             policy_version = str(getattr(policy, "version", "1"))
             try:

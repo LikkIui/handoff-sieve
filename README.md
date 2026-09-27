@@ -248,11 +248,16 @@ refund_handoff = handoff(
 The adapter treats history, pre-handoff items, and model input items as one
 logical handoff, so deduplication and the hard budget apply to their combined
 receiver view. It protects SDK control items from trimming and leaves original
-`new_items` intact for session history. Its latest audit reports are stored per
-execution context and are available through `handoff_filter.last_reports`.
+`new_items` intact for session history. After all policies run, it verifies
+recognized tool call/output IDs, order, pairing, and control-item retention.
+Its latest audit reports are stored per execution context and are available
+through `handoff_filter.last_reports`, including denied adapter invariants.
+Use a pipeline reporter when a report must remain available after
+`Runner.run_sync` returns to a different execution context.
 
-Input filters are intended for client-managed conversation history. Follow the
-OpenAI Agents SDK's restrictions for server-managed conversations.
+Input filters are intended for client-managed conversation history. An output
+whose matching call is hidden in server-managed history is denied. Realtime or
+streaming inputs must be buffered into a complete supported handoff first.
 The current compatibility window is OpenAI Agents SDK 0.22.x; each later minor
 version must pass the adapter integration tests before the upper bound moves.
 
