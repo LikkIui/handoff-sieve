@@ -33,6 +33,10 @@ rather than email addresses, customer names, credentials, or message text.
 The configuration fingerprint covers policy types, versions, public policy
 settings, routes, the token counter, and route behavior without including that
 configuration in the report. It is a comparison aid, not a signature.
+`MockSummarizer` contributes a SHA-256 hash of its fixed output text. A custom
+summarizer is identified by type unless it exposes safe fingerprint material;
+applications can pass a stable, non-sensitive `config_id` to
+`SummarizePolicy` to distinguish deployments without hashing credentials.
 
 ## Estimated and provider-reported usage
 
@@ -51,8 +55,10 @@ zero-cost work.
 ## Events and policy versions
 
 Events identify a policy, its version, the action, a count, and safe details.
-Built-in policies currently use version `"1"`. A custom policy can declare a
-different version:
+Built-in policy versions change when their audited behavior changes;
+`RedactPolicy` and `ExactDedupPolicy` currently report version `"2"`, while the
+remaining built-ins report `"1"`. A custom policy can declare a different
+version:
 
 ```python
 class MyPolicy(Policy):
@@ -63,6 +69,8 @@ class MyPolicy(Policy):
 The pipeline stamps events created while that policy runs with its declared
 version. Event details must contain only counts, reason codes, stable IDs, and
 safe configuration metadata.
+Redaction events include an `input` or `egress` stage so reports distinguish
+source scrubbing from the final pass over summarizer output.
 
 ## Callback and JSONL reporters
 

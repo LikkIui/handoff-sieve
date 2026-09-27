@@ -155,14 +155,21 @@ reject; `first` and `all` make the alternative behavior explicit and auditable.
 | `SummarizePolicy` | Call a user-provided summarizer for unprotected messages |
 
 Policy order matters. RelayGuard rejects known built-in order inversions. Use
-preserve, redact, schema, deduplicate, select or summarize, and finally budget.
-If protected content alone exceeds the budget, RelayGuard raises
-`BudgetExceededError` rather than deleting it.
+preserve, input redaction, schema, deduplicate, select or summarize, optional
+egress redaction, and finally budget. If protected content alone exceeds the
+budget, RelayGuard raises `BudgetExceededError` rather than deleting it.
+Custom policies that can change receiver-visible content must run before the
+egress redaction pass. No policy may run after the hard budget.
 
 `protected` and adapter reconstruction data are private processing state. They
 cannot be supplied through a public `Message` or mapping input. Unknown fields
 on messages, artifacts, and envelopes are rejected instead of silently
 creating an unprocessed output channel.
+
+When redaction precedes exact deduplication, RelayGuard uses a per-run keyed
+fingerprint to distinguish source messages that converge to the same redacted
+text. That temporary value is cleared during deduplication and is never part of
+the returned public or private message state.
 
 ## Audit and denied handoffs
 
@@ -197,11 +204,18 @@ denied reports without receiving the handoff envelope. See the
 Summarization is provider-neutral and opt-in:
 
 ```python
-from relayguard.policies import MockSummarizer, SummarizePolicy
+from relayguard import HandoffPipeline
+from relayguard.policies import MockSummarizer, RedactPolicy, SummarizePolicy
 
-policy = SummarizePolicy(
-    MockSummarizer("Offline test summary"),
-    max_tokens=100,
+pipeline = HandoffPipeline(
+    [
+        RedactPolicy(detectors=["api_key", "email"]),
+        SummarizePolicy(
+            MockSummarizer("Offline test summary"),
+            max_tokens=100,
+        ),
+        RedactPolicy(detectors=["api_key", "email"], stage="egress"),
+    ]
 )
 ```
 
@@ -210,6 +224,13 @@ implement the small `Summarizer` protocol with their model provider. Reports
 always compute summarizer input and output with RelayGuard's local token
 counter. Optional provider-reported usage is stored in separate fields, so a
 missing provider measurement is not presented as free token savings.
+
+Input redaction prevents source secrets from reaching the summarizer. The
+explicit `stage="egress"` pass handles a summarizer that generates a new
+matching value. Put the hard budget after that pass. `MockSummarizer` hashes
+its fixed text into the pipeline configuration fingerprint. For a custom
+backend, pass a stable, non-sensitive `config_id` to `SummarizePolicy` when
+deployment settings must distinguish audit fingerprints.
 
 YAML does not instantiate a summarizer because doing so would require silently
 loading credentials or executable provider code. Construct that policy in
@@ -268,9 +289,43 @@ python examples/quickstart/run.py
 python examples/failure_zoo/secret_leakage/demo.py
 python examples/failure_zoo/context_flooding/demo.py
 python examples/failure_zoo/constraint_loss/demo.py
+python examples/failure_zoo/full_envelope_leakage/demo.py
+python examples/failure_zoo/route_drift/demo.py
+python examples/failure_zoo/ingress_abuse/demo.py
+python examples/failure_zoo/summary_reinjection/demo.py
+python examples/failure_zoo/redaction_dedup_collision/demo.py
 ```
 
 The Failure Zoo examples are executable assertions, not benchmark claims.
+
+## Fixed offline benchmark
+
+The versioned synthetic fixture in `benchmarks/` measures the policy boundary
+without a model call. It includes eight labelled fake secrets, four benign
+lookalikes, five constraints, citations, a conclusion, a tool pair, an
+Artifact, long repeated context, one summary-generated secret, and five
+denied-path cases. `python -m benchmarks.run --check` reproduces the stable
+result and verifies this generated table. Maintainers use `--write` only to
+refresh both after an intentional fixture or policy change; a failing run is
+never written.
+
+<!-- benchmark-results:start -->
+| Fixed offline benchmark metric | Result |
+|---|---:|
+| Source secret/PII recall | 100.0% (8/8) |
+| Receiver / audit secret leaks | 0 / 0 |
+| Labelled false-positive rate | 0.0% (0/4) |
+| Constraint retention | 100.0% (5/5) |
+| Citation retention | 100.0% (2/2) |
+| Conclusion retention | 100.0% (1/1) |
+| Downstream task success | 100.0% (1/1) |
+| Tool-pair integrity | 100.0% (1/1) |
+| Deterministic runs | 5/5 |
+| Audited failure cases | 5/5 |
+| Audit completeness | 100.0% |
+| Estimated tokens | 903 original → 556 transmitted; 283 summarizer; 64 net saved |
+| Pipeline latency | p50 2.418 ms; p95 2.980 ms on the generating machine |
+<!-- benchmark-results:end -->
 
 ## Limitations
 

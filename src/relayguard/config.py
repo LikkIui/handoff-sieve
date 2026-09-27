@@ -61,6 +61,7 @@ def _build_policy(spec: Any, location: str) -> Policy:
                 "detect",
                 "detectors",
                 "custom_patterns",
+                "stage",
                 "max_pattern_bytes",
                 "max_scan_bytes",
                 "max_scan_strings",
@@ -72,6 +73,7 @@ def _build_policy(spec: Any, location: str) -> Policy:
         return RedactPolicy(
             detectors=detectors,
             custom_patterns=config.get("custom_patterns"),
+            stage=config.get("stage", "input"),
             max_pattern_bytes=config.get("max_pattern_bytes", 1_000),
             max_scan_bytes=config.get("max_scan_bytes", 1_000_000),
             max_scan_strings=config.get("max_scan_strings", 10_000),

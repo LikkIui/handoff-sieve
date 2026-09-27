@@ -13,6 +13,11 @@ EXAMPLES = [
     ROOT / "examples" / "failure_zoo" / "secret_leakage" / "demo.py",
     ROOT / "examples" / "failure_zoo" / "context_flooding" / "demo.py",
     ROOT / "examples" / "failure_zoo" / "constraint_loss" / "demo.py",
+    ROOT / "examples" / "failure_zoo" / "full_envelope_leakage" / "demo.py",
+    ROOT / "examples" / "failure_zoo" / "route_drift" / "demo.py",
+    ROOT / "examples" / "failure_zoo" / "ingress_abuse" / "demo.py",
+    ROOT / "examples" / "failure_zoo" / "summary_reinjection" / "demo.py",
+    ROOT / "examples" / "failure_zoo" / "redaction_dedup_collision" / "demo.py",
 ]
 
 

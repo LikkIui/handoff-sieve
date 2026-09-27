@@ -285,7 +285,16 @@ class HandoffPipeline:
             order_error.report = report
             raise
 
-        for policy in [*active_policies, *final_policies]:
+        policies_to_run = [*active_policies, *final_policies]
+        from relayguard.policies.deduplicate import ExactDedupPolicy
+
+        for index, policy in enumerate(policies_to_run):
+            context._set_source_fingerprint_tracking(
+                any(
+                    isinstance(later, ExactDedupPolicy)
+                    for later in policies_to_run[index + 1 :]
+                )
+            )
             event_start = len(report.events)
             policy_version = str(getattr(policy, "version", "1"))
             try:
@@ -446,19 +455,39 @@ class HandoffPipeline:
         }
         previous_rank = -1
         previous_name = ""
+        egress_redaction_seen = False
+        budget_seen = False
         for policy in policies:
             name = policy.name
+            is_egress_redaction = (
+                name == "redact" and getattr(policy, "stage", "input") == "egress"
+            )
+            if budget_seen:
+                raise ConfigurationError(
+                    f"Unsafe policy order in {location}: no policy can run after "
+                    "the hard budget."
+                )
+            if egress_redaction_seen and not (is_egress_redaction or name == "budget"):
+                raise ConfigurationError(
+                    f"Unsafe policy order in {location}: {name!r} cannot run "
+                    "after egress redaction."
+                )
             rank = ranks.get(name)
             if rank is None:
                 continue
+            if is_egress_redaction:
+                rank = 45
             if rank < previous_rank:
                 raise ConfigurationError(
                     f"Unsafe policy order in {location}: {name!r} cannot run "
                     f"after {previous_name!r}. Recommended order is preserve, "
-                    "redact, schema, deduplicate, select or summarize, budget."
+                    "input redact, schema, deduplicate, select or summarize, "
+                    "optional egress redact, budget."
                 )
             previous_rank = rank
             previous_name = name
+            egress_redaction_seen = egress_redaction_seen or is_egress_redaction
+            budget_seen = name == "budget"
 
     @staticmethod
     def _mark_denied(
@@ -514,14 +543,18 @@ class HandoffPipeline:
 
     @classmethod
     def _policy_fingerprint_value(cls, policy: Policy) -> dict[str, Any]:
-        try:
-            attributes = {
-                name: cls._fingerprint_value(value)
-                for name, value in vars(policy).items()
-                if not name.startswith("_")
-            }
-        except TypeError:
-            attributes = {}
+        describe = getattr(policy, "fingerprint_material", None)
+        if callable(describe):
+            attributes = cls._fingerprint_value(describe())
+        else:
+            try:
+                attributes = {
+                    name: cls._fingerprint_value(value)
+                    for name, value in vars(policy).items()
+                    if not name.startswith("_")
+                }
+            except TypeError:
+                attributes = {}
         return {
             "type": f"{type(policy).__module__}.{type(policy).__qualname__}",
             "name": policy.name,

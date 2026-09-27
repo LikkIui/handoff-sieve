@@ -18,6 +18,7 @@ from relayguard.policies import (
     BudgetPolicy,
     ExactDedupPolicy,
     MockSummarizer,
+    Policy,
     PreservePolicy,
     RedactPolicy,
     SchemaPolicy,
@@ -25,6 +26,7 @@ from relayguard.policies import (
     SummarizePolicy,
     Summary,
 )
+from relayguard.policies.base import PolicyContext
 
 
 def test_redact_nested_content_without_logging_secret() -> None:
@@ -105,6 +107,47 @@ def test_exact_dedup_keeps_order() -> None:
 
     assert [message.content for message in result.messages] == ["first", "second"]
     assert result.report.duplicates_removed == 1
+
+
+def test_dedup_keeps_distinct_messages_that_redact_to_the_same_text() -> None:
+    result = HandoffPipeline(
+        [RedactPolicy(detectors=["email"]), ExactDedupPolicy()]
+    ).process(
+        sender="a",
+        receiver="b",
+        messages=["owner alice@example.com", "owner bob@example.com"],
+    )
+
+    assert [message.content for message in result.messages] == [
+        "owner [REDACTED:email]",
+        "owner [REDACTED:email]",
+    ]
+    assert result.report.duplicates_removed == 0
+
+
+def test_dedup_still_removes_identical_messages_after_redaction() -> None:
+    result = HandoffPipeline(
+        [RedactPolicy(detectors=["email"]), ExactDedupPolicy()]
+    ).process(
+        sender="a",
+        receiver="b",
+        messages=["owner alice@example.com", "owner alice@example.com"],
+    )
+
+    assert len(result.messages) == 1
+    assert result.report.duplicates_removed == 1
+    assert "relayguard.source_fingerprint" not in result.messages[0].internal
+
+
+def test_redaction_without_dedup_does_not_retain_source_fingerprint() -> None:
+    result = HandoffPipeline([RedactPolicy(detectors=["email"])]).process(
+        sender="a",
+        receiver="b",
+        messages=["owner alice@example.com"],
+    )
+
+    assert result.messages[0].content == "owner [REDACTED:email]"
+    assert "relayguard.source_fingerprint" not in result.messages[0].internal
 
 
 def test_exact_dedup_never_removes_protected_occurrences() -> None:
@@ -335,6 +378,89 @@ def test_mock_summarizer_keeps_protected_messages_and_tracks_cost() -> None:
     ]
     assert result.report.summarizer_input_tokens > 0
     assert result.report.summarizer_output_tokens > 0
+
+
+def test_egress_redaction_removes_secret_reintroduced_by_summarizer() -> None:
+    secret = "summary-owner@example.com"
+    result = HandoffPipeline(
+        [
+            RedactPolicy(detectors=["email"]),
+            SummarizePolicy(
+                MockSummarizer(f"Generated contact: {secret}"),
+                max_tokens=30,
+            ),
+            RedactPolicy(detectors=["email"], stage="egress"),
+            BudgetPolicy(100, strategy="error"),
+        ]
+    ).process(sender="a", receiver="b", messages=["safe source"])
+
+    assert secret not in result.envelope.model_dump_json()
+    assert result.messages[0].content == "Generated contact: [REDACTED:email]"
+    redact_events = [
+        event for event in result.report.events if event.policy == "redact"
+    ]
+    assert [event.details["stage"] for event in redact_events] == ["input", "egress"]
+    assert [event.count for event in redact_events] == [0, 1]
+    assert result.report.redactions == 1
+
+
+def test_input_redaction_after_summarization_is_rejected() -> None:
+    with pytest.raises(ConfigurationError, match="Unsafe policy order"):
+        HandoffPipeline(
+            [
+                SummarizePolicy(MockSummarizer("summary"), max_tokens=20),
+                RedactPolicy(detectors=["email"]),
+            ]
+        )
+
+
+def test_egress_redaction_after_budget_is_rejected() -> None:
+    with pytest.raises(ConfigurationError, match="Unsafe policy order"):
+        HandoffPipeline(
+            [
+                BudgetPolicy(100),
+                RedactPolicy(detectors=["email"], stage="egress"),
+            ]
+        )
+
+
+class LateSecretPolicy(Policy):
+    name = "late_secret"
+
+    def apply(
+        self,
+        envelope: HandoffEnvelope,
+        context: PolicyContext,
+    ) -> HandoffEnvelope:
+        output = envelope.model_copy(deep=True)
+        output.messages.append(Message(content="late-owner@example.com"))
+        return output
+
+
+def test_custom_policy_must_run_before_egress_redaction() -> None:
+    result = HandoffPipeline(
+        [
+            LateSecretPolicy(),
+            RedactPolicy(detectors=["email"], stage="egress"),
+            BudgetPolicy(100),
+        ]
+    ).process(sender="a", receiver="b", messages=["safe"])
+
+    assert "late-owner@example.com" not in result.envelope.model_dump_json()
+
+    with pytest.raises(ConfigurationError, match="after egress redaction"):
+        HandoffPipeline(
+            [
+                RedactPolicy(detectors=["email"], stage="egress"),
+                LateSecretPolicy(),
+                BudgetPolicy(100),
+            ]
+        )
+
+
+def test_no_policy_can_run_after_hard_budget() -> None:
+    with pytest.raises(ConfigurationError, match="after the hard budget"):
+        HandoffPipeline([BudgetPolicy(100), LateSecretPolicy()])
 
 
 class OversizedSummarizer:

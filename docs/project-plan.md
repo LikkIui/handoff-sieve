@@ -1,10 +1,10 @@
 # RelayGuard 项目计划（接手修订版）
 
-> 状态：执行中（工作包 A/B/C/D 已完成，下一步进入 E 质量评测）
-> 修订日期：2026-09-27  
+> 状态：执行中（工作包 A/B/C/D/E 已完成，下一步进入 F Alpha 发布准备）
+> 修订日期：2026-09-28
 > 当前名称：RelayGuard 仅作为内部代号，正式发布名称尚未确定。
 
-## 0. 执行进度（2026-09-27）
+## 0. 执行进度（2026-09-28）
 
 已完成：
 
@@ -13,10 +13,13 @@
 - 将本计划纳入 `docs/`，并把 CI 工作流移到 GitHub 可识别的根目录；
 - 完成下列 8 项 P0 加固，并增加相应回归测试；
 - 在 Python 3.13 新虚拟环境中安装 core、OpenAI Agents SDK 和 tiktoken 可选依赖；
-- 通过 55 项测试，包括真实 `HandoffInputData`、双 Agent 离线 Runner、
+- 通过 73 项测试，包括真实 `HandoffInputData`、双 Agent 离线 Runner、
   最低/当前 SDK、并发隔离、审计导出和 tool call/output 完整性测试；
 - 完成版本化审计合同：关联 ID、时间与耗时、policy 版本、安全配置指纹、
   本地估算/供应商用量分离，以及 callback/JSONL reporter；
+- 完成固定离线 benchmark、确定性 Writer 合同、五类 denied-path 审计和
+  Failure Zoo V2；基准结果由 JSON 自动生成 README 表格并由 CI 校验；
+- 修复评测发现的摘要输出秘密重注入和脱敏后错误去重两个质量缺口；
 - 成功构建 sdist 与 wheel，并在第二个隔离环境中从 wheel 安装运行。
 
 当前保留事项：
@@ -24,7 +27,7 @@
 - RelayGuard 仍是内部代号，正式名称和发布坐标尚未决策；
 - P1 首轮阻塞已关闭；SDK tool-pair、不支持模式和双 Agent 离线端到端 handoff
   已通过验收；
-- 质量 benchmark 和正式命名仍待后续工作包处理；
+- 固定 benchmark 已通过全部验收门槛；正式命名与发布坐标仍待工作包 F 处理；
 - 尚未发布、推送或创建远端版本。
 
 ## 1. 项目判断
@@ -409,10 +412,10 @@ AutoGen adapter 不作为近期发布阻塞。只有在出现真实使用方或�
 
 ### 工作包 E：Evaluation
 
-- benchmark fixtures；
-- downstream task assertions；
-- Failure Zoo V2；
-- README 自动生成的实测数据。
+- [x] benchmark fixtures；
+- [x] downstream task assertions；
+- [x] Failure Zoo V2；
+- [x] README 自动生成的实测数据。
 
 ### 工作包 F：Alpha Release
 

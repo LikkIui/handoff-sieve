@@ -13,7 +13,13 @@ from relayguard import (
 )
 from relayguard.exceptions import BudgetExceededError, ReservedFieldError
 from relayguard.models import HandoffEnvelope
-from relayguard.policies import BudgetPolicy, Policy, SummarizePolicy, Summary
+from relayguard.policies import (
+    BudgetPolicy,
+    MockSummarizer,
+    Policy,
+    SummarizePolicy,
+    Summary,
+)
 from relayguard.policies.base import PolicyContext
 
 
@@ -187,3 +193,33 @@ def test_policy_version_and_configuration_fingerprint_are_auditable() -> None:
     assert result.report.events[0].policy_version == "7"
     assert first.config_fingerprint == same.config_fingerprint
     assert first.config_fingerprint != changed.config_fingerprint
+
+
+def test_summarizer_configuration_changes_pipeline_fingerprint() -> None:
+    first = HandoffPipeline(
+        [SummarizePolicy(MockSummarizer("fixed summary"), max_tokens=20)]
+    )
+    changed_text = HandoffPipeline(
+        [SummarizePolicy(MockSummarizer("different summary"), max_tokens=20)]
+    )
+    changed_id = HandoffPipeline(
+        [
+            SummarizePolicy(
+                UsageSummarizer(),
+                max_tokens=20,
+                config_id="deployment-v2",
+            )
+        ]
+    )
+    original_id = HandoffPipeline(
+        [
+            SummarizePolicy(
+                UsageSummarizer(),
+                max_tokens=20,
+                config_id="deployment-v1",
+            )
+        ]
+    )
+
+    assert first.config_fingerprint != changed_text.config_fingerprint
+    assert original_id.config_fingerprint != changed_id.config_fingerprint

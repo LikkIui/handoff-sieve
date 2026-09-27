@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import Any, Literal
 
 import regex
 
 from relayguard.exceptions import ConfigurationError, RedactionError
-from relayguard.models import HandoffEnvelope
+from relayguard.models import HandoffEnvelope, Message
 from relayguard.policies.base import Policy, PolicyContext
 
 BUILTIN_PATTERNS: dict[str, str] = {
@@ -19,23 +20,29 @@ BUILTIN_PATTERNS: dict[str, str] = {
     "email": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
     "phone": r"(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)",
 }
+SOURCE_FINGERPRINT_KEY = "relayguard.source_fingerprint"
 
 
 class RedactPolicy(Policy):
     """Redact configured patterns from nested message content and metadata."""
 
     name = "redact"
+    version = "2"
 
     def __init__(
         self,
         *,
         detectors: Iterable[str] = ("api_key", "email"),
         custom_patterns: Mapping[str, str] | None = None,
+        stage: Literal["input", "egress"] = "input",
         max_pattern_bytes: int = 1_000,
         max_scan_bytes: int = 1_000_000,
         max_scan_strings: int = 10_000,
         timeout_ms: int = 50,
     ) -> None:
+        if stage not in {"input", "egress"}:
+            raise ConfigurationError("stage must be 'input' or 'egress'")
+        self.stage = stage
         limits = {
             "max_pattern_bytes": max_pattern_bytes,
             "max_scan_bytes": max_scan_bytes,
@@ -98,6 +105,28 @@ class RedactPolicy(Policy):
         self.max_scan_bytes = max_scan_bytes
         self.max_scan_strings = max_scan_strings
         self.timeout_seconds = timeout_ms / 1_000
+
+    @staticmethod
+    def _record_source_fingerprint(
+        message: Message,
+        context: PolicyContext,
+    ) -> None:
+        internal = dict(message.internal)
+        if SOURCE_FINGERPRINT_KEY in internal:
+            return
+        public = message.model_dump(mode="json")
+        public["tags"] = sorted(public["tags"])
+        serialized = json.dumps(
+            public,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        fingerprint = context._source_fingerprint(serialized)
+        if fingerprint is None:
+            return
+        internal[SOURCE_FINGERPRINT_KEY] = fingerprint
+        message._replace_internal(internal)
 
     def _redact_string(
         self,
@@ -180,6 +209,7 @@ class RedactPolicy(Policy):
         output.metadata, count = self._redact_value(output.metadata, scan_state)
         total += count
         for message in output.messages:
+            self._record_source_fingerprint(message, context)
             message.role, count = self._redact_string(message.role, scan_state)
             total += count
             message.kind, count = self._redact_string(message.kind, scan_state)
@@ -212,6 +242,9 @@ class RedactPolicy(Policy):
             self.name,
             "redacted",
             count=total,
-            details={"detectors": sorted(self.patterns)},
+            details={
+                "detectors": sorted(self.patterns),
+                "stage": self.stage,
+            },
         )
         return output

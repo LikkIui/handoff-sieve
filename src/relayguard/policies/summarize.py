@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -45,6 +46,16 @@ class MockSummarizer:
     def __init__(self, text: str | None = None) -> None:
         self.text = text
 
+    def fingerprint_material(self) -> dict[str, str]:
+        """Describe deterministic configuration without exposing summary text."""
+
+        if self.text is None:
+            return {"mode": "extractive-preview"}
+        return {
+            "mode": "fixed-text",
+            "text_sha256": hashlib.sha256(self.text.encode("utf-8")).hexdigest(),
+        }
+
     def summarize(
         self,
         messages: Sequence[Message],
@@ -76,11 +87,37 @@ class SummarizePolicy(Policy):
 
     name = "summarize"
 
-    def __init__(self, summarizer: Summarizer, *, max_tokens: int) -> None:
+    def __init__(
+        self,
+        summarizer: Summarizer,
+        *,
+        max_tokens: int,
+        config_id: str | None = None,
+    ) -> None:
         if max_tokens <= 0:
             raise ValueError("max_tokens must be greater than zero")
         self.summarizer = summarizer
         self.max_tokens = max_tokens
+        self.config_id = config_id
+
+    def fingerprint_material(self) -> dict[str, object]:
+        """Return safe material used by the pipeline configuration fingerprint."""
+
+        describe = getattr(self.summarizer, "fingerprint_material", None)
+        if callable(describe):
+            backend: object = describe()
+        else:
+            backend = {
+                "type": (
+                    f"{type(self.summarizer).__module__}."
+                    f"{type(self.summarizer).__qualname__}"
+                )
+            }
+        return {
+            "max_tokens": self.max_tokens,
+            "config_id": self.config_id,
+            "summarizer": backend,
+        }
 
     def apply(
         self,
