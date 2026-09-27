@@ -10,6 +10,7 @@ from relayguard.policies.base import Policy, PolicyContext
 
 class KeepLastPolicy(Policy):
     name = "keep_last"
+    version = "1"
 
     def apply(
         self,
@@ -32,6 +33,10 @@ Custom policies should follow four rules:
 4. Raise a `RelayGuardError` for an expected denial. The pipeline attaches the
    denied audit report. Unexpected exceptions are wrapped in
    `PolicyExecutionError` and remain available as `__cause__`.
+
+Set a stable string `version` on the policy and change it when its audit-relevant
+behavior changes. Events emitted during the policy call are stamped with that
+version, and the version contributes to the pipeline configuration fingerprint.
 
 Built-in order validation cannot infer whether a custom policy reads, removes,
 or sends content. Place custom policies deliberately and add tests for secret

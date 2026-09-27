@@ -22,6 +22,7 @@ class Policy(ABC):
     """Base class for handoff policies."""
 
     name = "policy"
+    version = "1"
 
     @abstractmethod
     def apply(

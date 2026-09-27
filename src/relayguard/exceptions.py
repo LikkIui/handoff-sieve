@@ -47,3 +47,7 @@ class RedactionError(RelayGuardError):
 
 class PolicyExecutionError(RelayGuardError):
     """Raised when a policy rejects input with a non-RelayGuard exception."""
+
+
+class AuditExportError(RelayGuardError):
+    """Raised when a successful handoff cannot emit its required audit report."""

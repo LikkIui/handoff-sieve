@@ -16,11 +16,11 @@ from relayguard.tokens import TokenCounter
 
 @dataclass(frozen=True, slots=True)
 class Summary:
-    """Summarizer output and its provider-reported or estimated usage."""
+    """Summarizer output and optional provider-reported usage."""
 
     text: str
-    input_tokens: int = 0
-    output_tokens: int = 0
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
 
 class Summarizer(Protocol):
@@ -52,7 +52,6 @@ class MockSummarizer:
         max_tokens: int,
         token_counter: TokenCounter,
     ) -> Summary:
-        input_tokens = sum(token_counter.count_message(item) for item in messages)
         if self.text is not None:
             output = self.text
         else:
@@ -69,11 +68,7 @@ class MockSummarizer:
         while output and token_counter.count_text(output) > max_tokens:
             shrink_by = max(1, len(output) // 10)
             output = output[:-shrink_by]
-        return Summary(
-            text=output,
-            input_tokens=input_tokens,
-            output_tokens=token_counter.count_text(output),
-        )
+        return Summary(text=output)
 
 
 class SummarizePolicy(Policy):
@@ -111,6 +106,19 @@ class SummarizePolicy(Policy):
                 "Async summarizers are not supported by the synchronous "
                 "HandoffPipeline. Provide a synchronous summarizer backend."
             )
+        for usage_name, usage_value in (
+            ("input_tokens", summary.input_tokens),
+            ("output_tokens", summary.output_tokens),
+        ):
+            if usage_value is not None and (
+                not isinstance(usage_value, int)
+                or isinstance(usage_value, bool)
+                or usage_value < 0
+            ):
+                raise RelayGuardError(
+                    f"Summarizer {usage_name} must be a non-negative integer "
+                    "when provider usage is supplied."
+                )
         actual_input_tokens = sum(
             context.token_counter.count_message(message) for message in candidates
         )
@@ -121,12 +129,18 @@ class SummarizePolicy(Policy):
                 f"exceeding its limit of {self.max_tokens}."
             )
 
-        context.report.summarizer_input_tokens += (
-            summary.input_tokens or actual_input_tokens
-        )
-        context.report.summarizer_output_tokens += (
-            summary.output_tokens or actual_output_tokens
-        )
+        context.report.summarizer_input_tokens += actual_input_tokens
+        context.report.summarizer_output_tokens += actual_output_tokens
+        if summary.input_tokens is not None:
+            current = context.report.summarizer_provider_input_tokens or 0
+            context.report.summarizer_provider_input_tokens = (
+                current + summary.input_tokens
+            )
+        if summary.output_tokens is not None:
+            current = context.report.summarizer_provider_output_tokens or 0
+            context.report.summarizer_provider_output_tokens = (
+                current + summary.output_tokens
+            )
         summary_message = Message(
             role="assistant",
             content=summary.text,

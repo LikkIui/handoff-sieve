@@ -166,9 +166,10 @@ creating an unprocessed output channel.
 
 ## Audit and denied handoffs
 
-Every audit report has a schema version, unique `handoff_id`, and a `passed` or
-`denied` status. Policy failures attach the denied report to the raised
-`RelayGuardError`:
+Every audit report has a schema version, unique `handoff_id`, timestamps,
+duration, configuration fingerprint, and a `passed` or `denied` status. A
+caller can also supply `request_id` for correlation. Policy failures attach the
+completed denied report to the raised `RelayGuardError`:
 
 ```python
 from relayguard import RelayGuardError
@@ -187,7 +188,9 @@ except RelayGuardError as error:
 
 Reports contain counts and reason codes rather than removed or redacted source
 values. Schema validation reports how many fields normalization changed or
-removed.
+removed. `CallbackReporter` and `JsonlReporter` can export both successful and
+denied reports without receiving the handoff envelope. See the
+[audit report contract](docs/audit.md) for fields and failure behavior.
 
 ## Summarization
 
@@ -204,8 +207,9 @@ policy = SummarizePolicy(
 
 `MockSummarizer` exists for tests and demonstrations. Applications can
 implement the small `Summarizer` protocol with their model provider. Reports
-track summarizer input and output separately so a summary call is not presented
-as free token savings.
+always compute summarizer input and output with RelayGuard's local token
+counter. Optional provider-reported usage is stored in separate fields, so a
+missing provider measurement is not presented as free token savings.
 
 YAML does not instantiate a summarizer because doing so would require silently
 loading credentials or executable provider code. Construct that policy in
@@ -280,6 +284,7 @@ See [SECURITY.md](SECURITY.md) before using RelayGuard with sensitive data.
 Detailed references:
 
 - [Configuration](docs/configuration.md)
+- [Audit reports and exporters](docs/audit.md)
 - [Custom policies](docs/custom-policies.md)
 - [OpenAI adapter support matrix](docs/openai-adapter.md)
 - [Threat model](docs/threat-model.md)

@@ -1,6 +1,6 @@
 # RelayGuard 项目计划（接手修订版）
 
-> 状态：执行中（工作包 A/B 已完成，C/D 加固进行中）
+> 状态：执行中（工作包 A/B/C 已完成，D 加固进行中）
 > 修订日期：2026-09-27  
 > 当前名称：RelayGuard 仅作为内部代号，正式发布名称尚未确定。
 
@@ -13,14 +13,16 @@
 - 将本计划纳入 `docs/`，并把 CI 工作流移到 GitHub 可识别的根目录；
 - 完成下列 8 项 P0 加固，并增加相应回归测试；
 - 在 Python 3.13 新虚拟环境中安装 core、OpenAI Agents SDK 和 tiktoken 可选依赖；
-- 通过 43 项测试，包括真实 `HandoffInputData`、最低/当前 SDK 和并发隔离测试；
+- 通过 51 项测试，包括真实 `HandoffInputData`、最低/当前 SDK、并发隔离和审计导出测试；
+- 完成版本化审计合同：关联 ID、时间与耗时、policy 版本、安全配置指纹、
+  本地估算/供应商用量分离，以及 callback/JSONL reporter；
 - 成功构建 sdist 与 wheel，并在第二个隔离环境中从 wheel 安装运行。
 
 当前保留事项：
 
 - RelayGuard 仍是内部代号，正式名称和发布坐标尚未决策；
 - P1 首轮阻塞已关闭；更完整的 SDK tool-pair/不支持模式验收进入工作包 D；
-- Audit exporter、质量 benchmark 和正式命名仍待后续工作包处理；
+- 质量 benchmark 和正式命名仍待后续工作包处理；
 - 尚未发布、推送或创建远端版本。
 
 ## 1. 项目判断
@@ -204,15 +206,15 @@ RelayGuard 默认生成只供接收 Agent 使用的 receiver view，并单独返
 
 工作项：
 
-- 定义稳定、版本化的 `AuditReport` JSON schema；
-- 增加 handoff/request ID、时间戳、耗时、状态和失败原因码；
-- 记录 policy 名称、版本、rule ID 和安全的配置指纹；
-- 分开记录 estimated usage 与 provider-reported usage；
-- pipeline 始终自行计算 summarizer input/output，provider usage 作为补充；
-- 记录 Schema 规范化导致的 changed/removed field count，但不保存字段值；
-- 预算、Schema、配置和摘要失败时返回 denied report；
-- 提供 reporter/exporter protocol，支持 JSONL、回调和后续 OpenTelemetry 集成；
-- 禁止 exporter 默认接收原始敏感内容。
+- [x] 定义稳定、版本化的 `AuditReport` JSON schema；
+- [x] 增加 handoff/request ID、时间戳、耗时、状态和失败原因码；
+- [x] 记录 policy 名称、版本、rule ID 和安全的配置指纹；
+- [x] 分开记录 estimated usage 与 provider-reported usage；
+- [x] pipeline 始终自行计算 summarizer input/output，provider usage 作为补充；
+- [x] 记录 Schema 规范化导致的 changed/removed field count，但不保存字段值；
+- [x] 预算、Schema、配置和摘要失败时返回 denied report；
+- [x] 提供 reporter/exporter protocol，支持 JSONL、回调和后续 OpenTelemetry 集成；
+- [x] 禁止 exporter 默认接收原始 handoff 内容。
 
 验收标准：
 
@@ -390,10 +392,10 @@ AutoGen adapter 不作为近期发布阻塞。只有在出现真实使用方或�
 
 ### 工作包 C：Audit Contract
 
-- 版本化报告；
-- denied result；
-- 成本与 latency；
-- reporter/exporter protocol。
+- [x] 版本化报告；
+- [x] denied result；
+- [x] 成本与 latency；
+- [x] reporter/exporter protocol。
 
 ### 工作包 D：OpenAI Adapter
 
@@ -425,8 +427,8 @@ AutoGen adapter 不作为近期发布阻塞。只有在出现真实使用方或�
 3. Message extra fields 是默认拒绝，还是通过显式 allowlist 开启；
 4. sender/receiver 是否只允许安全 ID，审计中是否使用 alias/hash；
 5. sync pipeline 与 async summarizer 是提供两套 API，还是 Alpha 暂时禁止异步后端；
-6. provider-reported token usage 与本地 estimate 的报告字段和单位；
-7. 首个 exporter 是 JSONL、callback 还是 OpenTelemetry event；
+6. [已决策] provider-reported token usage 与本地 estimate 使用独立字段；
+7. [已决策] 首批 exporter 同时提供 JSONL 和 callback，OpenTelemetry 后续接入；
 8. OpenAI SDK 的最低支持版本和兼容测试策略。
 
 ## 9. 成功标准
