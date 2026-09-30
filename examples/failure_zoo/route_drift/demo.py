@@ -1,8 +1,8 @@
 """Failure: a renamed receiver bypasses the intended policy route."""
 
-from relayguard import HandoffPipeline, UnmatchedRouteError
-from relayguard.pipeline import PolicyRule
-from relayguard.policies import RedactPolicy
+from handoff_sieve import HandoffPipeline, UnmatchedRouteError
+from handoff_sieve.pipeline import PolicyRule
+from handoff_sieve.policies import RedactPolicy
 
 
 def main() -> None:

@@ -1,8 +1,15 @@
-# RelayGuard 项目计划（接手修订版）
+# HandoffSieve 项目计划（接手修订版）
 
-> 状态：执行中（工作包 A/B/C/D/E 已完成，下一步进入 F Alpha 发布准备）
+> 状态：历史接管与工程记录；当前开发优先级以 `iteration-roadmap.md` 为准
 > 修订日期：2026-09-28
-> 当前名称：RelayGuard 仅作为内部代号，正式发布名称尚未确定。
+> 正式候选：HandoffSieve；distribution `handoff-sieve`；import
+> `handoff_sieve`。远端仓库改名与 PyPI 坐标保留尚未执行。
+>
+> **产品版本路线已重新调研并移至 [`iteration-roadmap.md`](iteration-roadmap.md)。**
+> 本文件继续记录 0.1 接管、安全基线和既有工作；其中阶段 6/7 的旧描述不再作为
+> 未来版本定义。
+> 当前定位是 receiver-specific context / handoff optimization；本文后续的安全加固内容
+> 仅是已完成的底层能力，不代表当前产品主线或近期待办。
 
 ## 0. 执行进度（2026-09-28）
 
@@ -21,18 +28,23 @@
   Failure Zoo V2；基准结果由 JSON 自动生成 README 表格并由 CI 校验；
 - 修复评测发现的摘要输出秘密重注入和脱敏后错误去重两个质量缺口；
 - 成功构建 sdist 与 wheel，并在第二个隔离环境中从 wheel 安装运行。
+- 将候选版本推进为 PEP 440 `0.2.0a1`，以 `_version.py` 作为打包与运行时
+  版本的单一来源；
+- 增加 changelog、发布清单和已安装制品冒烟脚本；CI 会从空目录验证 wheel，
+  并解包 sdist 运行其自带测试与 benchmark。
 
 当前保留事项：
 
-- RelayGuard 仍是内部代号，正式名称和发布坐标尚未决策；
+- 已完成命名冲突初筛并选择 HandoffSieve；本地源码、distribution 和 import 已统一，
+  远端仓库改名、PyPI 实时复核与名称保留仍待执行；
 - P1 首轮阻塞已关闭；SDK tool-pair、不支持模式和双 Agent 离线端到端 handoff
   已通过验收；
 - 固定 benchmark 已通过全部验收门槛；正式命名与发布坐标仍待工作包 F 处理；
 - 尚未发布、推送或创建远端版本。
 
-## 1. 项目判断
+## 1. 接手时项目判断（历史记录）
 
-RelayGuard 当前是一个可运行的 Alpha 原型。核心策略、YAML 配置、审计模型、
+HandoffSieve 当前是一个可运行的 Alpha 原型。核心策略、YAML 配置、审计模型、
 OpenAI Agents SDK 适配器雏形、示例和离线测试已经存在，但尚未达到公开发布所需的
 安全边界、真实框架验收和质量证明标准。
 
@@ -43,7 +55,7 @@ OpenAI Agents SDK 适配器雏形、示例和离线测试已经存在，但尚�
 在安全边界和真实 handoff 验收完成前，不发布稳定版，不扩张为完整 Agent 框架，
 也不同时开发多个框架适配器。
 
-## 2. 产品定位
+## 2. 接手时产品定位（已由当前路线取代）
 
 ### 一句话定位
 
@@ -52,7 +64,7 @@ OpenAI Agents SDK 适配器雏形、示例和离线测试已经存在，但尚�
 
 ### 核心价值
 
-RelayGuard 应当回答以下问题：
+HandoffSieve 应当回答以下问题：
 
 1. 接收 Agent 最终会看到什么？
 2. 哪些内容被删除、修改、保留或拒绝？
@@ -63,8 +75,8 @@ RelayGuard 应当回答以下问题：
 
 ### 差异化方向
 
-RelayGuard 不以“策略数量最多”为目标。PII 检测、摘要、上下文裁剪和完整可观测性
-已有成熟项目。RelayGuard 的差异应当是：
+HandoffSieve 不以“策略数量最多”为目标。PII 检测、摘要、上下文裁剪和完整可观测性
+已有成熟项目。HandoffSieve 的差异应当是：
 
 - 跨框架使用同一套 handoff policy contract；
 - 默认确定性、离线可测；
@@ -121,8 +133,8 @@ RelayGuard 不以“策略数量最多”为目标。PII 检测、摘要、上�
 
 ### 4.4 Canonical state 与 receiver view 分离
 
-框架的原始会话状态、checkpoint 或 session history 不应被 RelayGuard 隐式改写。
-RelayGuard 默认生成只供接收 Agent 使用的 receiver view，并单独返回审计结果。
+框架的原始会话状态、checkpoint 或 session history 不应被 HandoffSieve 隐式改写。
+HandoffSieve 默认生成只供接收 Agent 使用的 receiver view，并单独返回审计结果。
 
 ## 5. 当前已知阻塞
 
@@ -290,7 +302,7 @@ RelayGuard 默认生成只供接收 Agent 使用的 receiver view，并单独返
 最重要 Demo：
 
 ```text
-Researcher → RelayGuard → Writer
+Researcher → HandoffSieve → Writer
 ```
 
 必须同时证明：
@@ -314,14 +326,20 @@ Researcher → RelayGuard → Writer
 
 发布工作：
 
-- 确定正式项目名、包名和 import 名；
-- 补充项目 URL、作者/维护者、安全报告渠道和版本策略；
-- 提供 `py.typed`、lint、类型检查和 build 配置；
-- CI 覆盖 Python 3.10–3.13、最低/当前 OpenAI SDK、sdist/wheel 安装；
-- 从干净环境运行 quickstart、Failure Zoo 和 adapter integration tests；
-- 编写配置参考、自定义 Policy、adapter 能力矩阵、威胁模型和迁移说明；
-- 发布 GitHub prerelease 和 PyPI `0.1.0a1`；
-- 收集真实用户的框架、策略和失败案例需求。
+- [x] 确定正式候选 HandoffSieve、distribution `handoff-sieve` 和 import
+  `handoff_sieve`，完成本地统一；
+- [ ] 将远端仓库改为 `handoff-sieve`，复核并保留 PyPI 坐标；
+- [x] 补充当前项目 URL、维护者、安全报告渠道和 PEP 440 版本策略；正式改名时
+  再一次性更新 URL；
+- [x] 提供 `py.typed`、lint、类型检查和 build 配置；
+- [x] CI 覆盖 Python 3.10–3.13、最低/当前 OpenAI SDK、sdist/wheel 安装；
+- [x] 从 wheel 运行 quickstart、Failure Zoo 和 adapter smoke test，并从解包的
+  sdist 运行完整测试和 benchmark；
+- [x] 编写配置参考、自定义 Policy、adapter 能力矩阵、威胁模型、迁移说明和
+  `docs/release-checklist.md`；
+- [ ] 在正式名称确定后增加受保护的 Trusted Publishing release workflow；
+- [ ] 发布 GitHub prerelease 和 PyPI `0.2.0a1`；
+- [ ] 收集真实用户的框架、策略和失败案例需求。
 
 V0.1 Alpha 发布门槛：
 
@@ -339,7 +357,7 @@ V0.1 Alpha 发布门槛：
 
 优先实现 LangGraph/LangChain adapter：
 
-- 转换 `BaseMessage[] ↔ RelayGuard Envelope`；
+- 转换 `BaseMessage[] ↔ HandoffSieve Envelope`；
 - 返回 receiver-view state patch 和 `AuditReport`；
 - 不接管 `Command.goto`、active agent 或工作流路由；
 - 保留 AI tool call 与相同 call ID 的 ToolMessage；
@@ -353,7 +371,7 @@ V0.1 Alpha 发布门槛：
 
 ### 阶段 7：A2A 1.0 边界
 
-目标：把 RelayGuard 应用于跨进程或跨组织的 Agent 通信边界。
+目标：把 HandoffSieve 应用于跨进程或跨组织的 Agent 通信边界。
 
 在实现前先扩展 core 对以下对象的明确支持：
 
@@ -371,7 +389,7 @@ A2A 服务端。协议 ID、role、task state、媒体类型和 append 语义默
 - 对完整逻辑 Message/Artifact 执行策略；
 - 不破坏 A2A 任务状态和引用关系；
 - streaming 在无法安全聚合时明确拒绝或降级为只审计；
-- 后续再评估可协商的 RelayGuard A2A extension。
+- 后续再评估可协商的 HandoffSieve A2A extension。
 
 ### AutoGen 适配器
 
@@ -419,23 +437,32 @@ AutoGen adapter 不作为近期发布阻塞。只有在出现真实使用方或�
 
 ### 工作包 F：Alpha Release
 
-- 正式命名和打包；
-- 文档与安全说明；
-- GitHub/PyPI prerelease；
-- 外部反馈。
+- [x] 选择 HandoffSieve，并统一本地 distribution、import 和文档坐标；
+- [ ] 改名远端 repository，复核并保留发布坐标；
+- [x] `0.2.0a1` 打包元数据、单一版本源、changelog 和自包含 sdist；
+- [x] wheel/sdist 干净安装、离线示例、adapter smoke 和 `pip check`；
+- [x] 文档、安全说明和可执行发布清单；
+- [ ] GitHub/PyPI Trusted Publishing prerelease；
+- [ ] 外部反馈。
 
 ## 8. 近期决策清单
 
 在工作包 A/B 期间需要确定：
 
-1. 正式项目名、PyPI distribution 名和 Python import 名是否一致；
-2. 使用 rules 时，`on_unmatched` 是否默认固定为 `error`；
-3. Message extra fields 是默认拒绝，还是通过显式 allowlist 开启；
-4. sender/receiver 是否只允许安全 ID，审计中是否使用 alias/hash；
-5. sync pipeline 与 async summarizer 是提供两套 API，还是 Alpha 暂时禁止异步后端；
+1. [已决策] 正式名称使用 HandoffSieve，PyPI distribution 使用
+   `handoff-sieve`，Python import 使用规范下划线形式 `handoff_sieve`；
+2. [已决策] 使用 rules 时，`on_unmatched` 默认固定为 `error`；只有显式配置才
+   允许 `warn` 或 `pass`；
+3. [已决策] Message 和 envelope extra fields 默认拒绝，Alpha 不开放隐式
+   allowlist；
+4. [已决策] 审计按原样记录 sender/receiver/request ID；调用方必须传入不含邮箱、
+   客户名、凭据或消息正文的安全 alias/hash；
+5. [已决策] Alpha 只提供 sync pipeline；async summarizer 携带 denied report
+   明确拒绝；
 6. [已决策] provider-reported token usage 与本地 estimate 使用独立字段；
 7. [已决策] 首批 exporter 同时提供 JSONL 和 callback，OpenTelemetry 后续接入；
-8. OpenAI SDK 的最低支持版本和兼容测试策略。
+8. [已决策] OpenAI Agents SDK 支持窗口固定为 `>=0.22,<0.23`，CI 验证
+   0.22.0 与 0.22.3；扩展上界前必须先通过 adapter integration suite。
 
 ## 9. 成功标准
 
@@ -446,7 +473,7 @@ AutoGen adapter 不作为近期发布阻塞。只有在出现真实使用方或�
 - 失败默认可见、可审计、可测试；
 - 同一 policy contract 可在两个框架中保持相同不变量；
 - benchmark 能证明安全收益没有以明显破坏下游任务为代价；
-- 用户可以在不采用新的编排框架、数据库或管理后台的情况下接入 RelayGuard。
+- 用户可以在不采用新的编排框架、数据库或管理后台的情况下接入 HandoffSieve。
 
 ## 10. 调研依据
 

@@ -1,8 +1,8 @@
-"""Offline RelayGuard quickstart."""
+"""Offline HandoffSieve quickstart."""
 
 from pathlib import Path
 
-from relayguard import HandoffPipeline, Message
+from handoff_sieve import HandoffPipeline, Message
 
 HERE = Path(__file__).resolve().parent
 

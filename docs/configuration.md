@@ -1,6 +1,6 @@
-# RelayGuard configuration
+# HandoffSieve configuration
 
-RelayGuard accepts policies directly in Python or from safe YAML. YAML only
+HandoffSieve accepts policies directly in Python or from safe YAML. YAML only
 constructs built-in policies and never imports a module named by the file.
 
 ## Root options
@@ -40,7 +40,7 @@ order check.
 
 ## Policy order
 
-RelayGuard validates this order for built-in policies:
+HandoffSieve validates this order for built-in policies:
 
 1. `preserve`
 2. input `redact`
@@ -53,7 +53,7 @@ RelayGuard validates this order for built-in policies:
 Equal-rank operations may repeat. Put custom policies that can change visible
 content before egress redaction. After an egress redaction pass, only another
 egress redaction or the budget may run; no policy may run after the budget.
-RelayGuard raises `ConfigurationError` instead of allowing a late policy to
+HandoffSieve raises `ConfigurationError` instead of allowing a late policy to
 bypass either terminal gate.
 
 ## Redaction limits
@@ -73,7 +73,7 @@ bypass either terminal gate.
 Detector names use 1–64 ASCII letters, digits, dots, underscores, or hyphens.
 At most 32 custom patterns are accepted. Invalid patterns fail during
 configuration. A scan limit or regex timeout denies the handoff and attaches a
-denied audit report; RelayGuard never treats an incomplete scan as success.
+denied audit report; HandoffSieve never treats an incomplete scan as success.
 
 When a summarizer or custom transformation can generate new sensitive text,
 add a second policy with `stage: egress` after that transformation and before
@@ -82,6 +82,6 @@ the hard budget. The audit event records the stage explicitly.
 ## Failure reports
 
 Policy, route, normalization, and token-count failures raise a
-`RelayGuardError` with `error.report`. The report contains a unique
+`HandoffSieveError` with `error.report`. The report contains a unique
 `handoff_id`, `status="denied"`, `failure_code`, and `failed_policy`. It does
 not store the removed or redacted source value.

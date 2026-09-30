@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from relayguard import HandoffEnvelope, HandoffPipeline, Message, TiktokenCounter
-from relayguard.exceptions import ReservedFieldError
+from handoff_sieve import HandoffEnvelope, HandoffPipeline, Message, TiktokenCounter
+from handoff_sieve.exceptions import ReservedFieldError
 
 
 def test_pipeline_normalizes_common_inputs() -> None:

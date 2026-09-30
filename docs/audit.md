@@ -1,8 +1,8 @@
-# RelayGuard audit reports
+# HandoffSieve audit reports
 
 Every completed pipeline run produces one versioned `AuditReport`. Successful
 runs return it as `result.report`; denied runs attach the same report to the
-raised `RelayGuardError`. A report contains counts and stable identifiers, not
+raised `HandoffSieveError`. A report contains counts and stable identifiers, not
 message, artifact, metadata, or redacted field values.
 
 ## Correlation and timing
@@ -41,8 +41,8 @@ applications can pass a stable, non-sensitive `config_id` to
 ## Estimated and provider-reported usage
 
 `original_tokens`, `transmitted_tokens`, `summarizer_input_tokens`, and
-`summarizer_output_tokens` are values computed by the configured RelayGuard
-token counter. RelayGuard always computes the two summarizer values locally.
+`summarizer_output_tokens` are values computed by the configured HandoffSieve
+token counter. HandoffSieve always computes the two summarizer values locally.
 They drive `estimated_net_tokens_saved`.
 
 A summarizer may also return provider usage in `Summary.input_tokens` and
@@ -78,7 +78,7 @@ Reporters receive a deep copy of the completed `AuditReport`. They never
 receive the source or processed `HandoffEnvelope`.
 
 ```python
-from relayguard import CallbackReporter, HandoffPipeline, JsonlReporter
+from handoff_sieve import CallbackReporter, HandoffPipeline, JsonlReporter
 
 
 def observe(report):
@@ -89,7 +89,7 @@ pipeline = HandoffPipeline(
     policies,
     reporters=[
         CallbackReporter(observe),
-        JsonlReporter("var/audit/relayguard.jsonl"),
+        JsonlReporter("var/audit/handoff_sieve.jsonl"),
     ],
 )
 ```
@@ -98,7 +98,7 @@ The JSONL parent directory must already exist. A `JsonlReporter` serializes
 each report on one UTF-8 line and protects appends made through the same
 reporter instance with a lock.
 
-If a reporter fails after an otherwise successful run, RelayGuard raises
+If a reporter fails after an otherwise successful run, HandoffSieve raises
 `AuditExportError` and changes that report to `status="denied"` with
 `failure_code="audit_export"`. If policy processing was already denied, a
 reporter failure is recorded as a warning and does not replace the original

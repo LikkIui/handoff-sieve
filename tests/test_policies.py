@@ -3,18 +3,18 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from relayguard import (
+from handoff_sieve import (
     BudgetExceededError,
     HandoffEnvelope,
     HandoffPipeline,
+    HandoffSieveError,
     Message,
     PolicyExecutionError,
     RedactionError,
-    RelayGuardError,
 )
-from relayguard.exceptions import ConfigurationError
-from relayguard.models import Artifact
-from relayguard.policies import (
+from handoff_sieve.exceptions import ConfigurationError
+from handoff_sieve.models import Artifact
+from handoff_sieve.policies import (
     BudgetPolicy,
     ExactDedupPolicy,
     MockSummarizer,
@@ -26,7 +26,7 @@ from relayguard.policies import (
     SummarizePolicy,
     Summary,
 )
-from relayguard.policies.base import PolicyContext
+from handoff_sieve.policies.base import PolicyContext
 
 
 def test_redact_nested_content_without_logging_secret() -> None:
@@ -136,7 +136,7 @@ def test_dedup_still_removes_identical_messages_after_redaction() -> None:
 
     assert len(result.messages) == 1
     assert result.report.duplicates_removed == 1
-    assert "relayguard.source_fingerprint" not in result.messages[0].internal
+    assert "handoff_sieve.source_fingerprint" not in result.messages[0].internal
 
 
 def test_redaction_without_dedup_does_not_retain_source_fingerprint() -> None:
@@ -147,7 +147,7 @@ def test_redaction_without_dedup_does_not_retain_source_fingerprint() -> None:
     )
 
     assert result.messages[0].content == "owner [REDACTED:email]"
-    assert "relayguard.source_fingerprint" not in result.messages[0].internal
+    assert "handoff_sieve.source_fingerprint" not in result.messages[0].internal
 
 
 def test_exact_dedup_never_removes_protected_occurrences() -> None:
@@ -476,14 +476,14 @@ class AsyncSummarizer:
 def test_summarize_rejects_backend_that_breaks_limit() -> None:
     pipeline = HandoffPipeline([SummarizePolicy(OversizedSummarizer(), max_tokens=5)])
 
-    with pytest.raises(RelayGuardError, match="exceeding its limit"):
+    with pytest.raises(HandoffSieveError, match="exceeding its limit"):
         pipeline.process(sender="a", receiver="b", messages=["input"])
 
 
 def test_summarize_rejects_async_backend_with_clear_boundary() -> None:
     pipeline = HandoffPipeline([SummarizePolicy(AsyncSummarizer(), max_tokens=20)])
 
-    with pytest.raises(RelayGuardError, match="Async summarizers") as captured:
+    with pytest.raises(HandoffSieveError, match="Async summarizers") as captured:
         pipeline.process(sender="a", receiver="b", messages=["input"])
 
     assert captured.value.report is not None

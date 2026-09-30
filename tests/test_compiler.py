@@ -1,0 +1,358 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+from pydantic import ValidationError
+
+from handoff_sieve import (
+    ApproxTokenCounter,
+    Artifact,
+    BudgetExceededError,
+    CallbackReporter,
+    ContractError,
+    HandoffEnvelope,
+    HandoffPipeline,
+    Message,
+    ReceiverContract,
+    compile_handoff,
+)
+from handoff_sieve.policies import RedactPolicy, SummarizePolicy, Summary
+
+
+def test_compile_handoff_builds_explicit_receiver_packet() -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[
+            Message(content="Use Python 3.10", kind="constraints"),
+            Message(content="Use signed sessions", tags={"decisions"}),
+            Message(content="RFC 7519", tags={"evidence"}),
+            Message(content="Schema added", tags={"completed_work"}),
+            Message(content="Cookies failed", tags={"failed_attempts"}),
+            Message(content="Implement middleware", tags={"pending_work"}),
+            Message(content={"exit_code": 0}, kind="tool_results"),
+            Message(content="irrelevant conversation"),
+        ],
+        artifacts=[Artifact(name="auth.py", content="pass")],
+    )
+    contract = ReceiverContract(
+        goal="Implement authentication",
+        required=["constraints", "decisions", "pending_work"],
+        preferred=[
+            "evidence",
+            "completed_work",
+            "failed_attempts",
+            "artifacts",
+            "tool_results",
+        ],
+        max_tokens=2_000,
+    )
+
+    result = compile_handoff(source, contract, request_id="takeover-1")
+
+    assert result.packet.goal == "Implement authentication"
+    assert result.packet.constraints[0].content == "Use Python 3.10"
+    assert result.packet.decisions[0].content == "Use signed sessions"
+    assert result.packet.evidence[0].content == "RFC 7519"
+    assert result.packet.completed_work[0].content == "Schema added"
+    assert result.packet.failed_attempts[0].content == "Cookies failed"
+    assert result.packet.pending_work[0].content == "Implement middleware"
+    assert result.packet.artifacts[0].name == "auth.py"
+    assert result.packet.tool_results[0].content == {"exit_code": 0}
+    assert result.omitted_count == 1
+    assert result.packet_tokens <= contract.max_tokens
+    assert result.report.request_id == "takeover-1"
+    assert result.report.status == "passed"
+    assert result.report.events[-1].policy == "receiver_contract"
+
+
+def test_receiver_text_is_canonical_and_matches_packet_token_count() -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[
+            Message(
+                content={"decision": "Use signed sessions", "accepted": True},
+                kind="decisions",
+                tags={"zeta", "alpha"},
+            ),
+            Message(content=["pytest", "ruff"], kind="tool_results"),
+        ],
+        artifacts=[
+            Artifact(
+                name="auth.py",
+                content={"path": "src/auth.py", "changed": True},
+            )
+        ],
+    )
+    result = compile_handoff(
+        source,
+        ReceiverContract(
+            goal="Implement authentication",
+            required=["decisions", "artifacts"],
+            preferred=["tool_results"],
+            max_tokens=2_000,
+        ),
+    )
+
+    receiver_text = result.packet.to_receiver_text()
+
+    expected = result.packet.model_dump(mode="json")
+    expected["decisions"][0]["tags"] = ["alpha", "zeta"]
+    assert receiver_text == json.dumps(
+        expected,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    payload = json.loads(receiver_text)
+    assert payload["decisions"][0]["tags"] == ["alpha", "zeta"]
+    assert payload["decisions"][0]["content"] == {
+        "accepted": True,
+        "decision": "Use signed sessions",
+    }
+    assert ApproxTokenCounter().count_text(receiver_text) == result.packet_tokens
+    assert "_protected" not in receiver_text
+    assert "_internal" not in receiver_text
+    assert '"constraints":[]' in receiver_text
+
+
+def test_required_section_missing_fails_clearly() -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[Message(content="Only evidence", tags={"evidence"})],
+    )
+    contract = ReceiverContract(
+        goal="Implement authentication",
+        required=["decisions"],
+        max_tokens=1_000,
+    )
+
+    with pytest.raises(ContractError, match="decisions"):
+        compile_handoff(source, contract)
+
+
+def test_required_context_is_never_trimmed_to_meet_budget() -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[Message(content="x" * 2_000, tags={"decisions"})],
+    )
+    contract = ReceiverContract(
+        goal="Implement authentication",
+        required=["decisions"],
+        max_tokens=100,
+    )
+
+    with pytest.raises(BudgetExceededError, match="No required content was removed"):
+        compile_handoff(source, contract)
+
+
+def test_preferred_sections_follow_priority_and_fit_remaining_budget() -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[
+            Message(content="must keep", tags={"constraints"}),
+            Message(content="x" * 2_000, tags={"evidence"}),
+            Message(content="small useful failure", tags={"failed_attempts"}),
+        ],
+    )
+    small_only = compile_handoff(
+        source,
+        ReceiverContract(
+            goal="Implement authentication",
+            required=["constraints"],
+            preferred=["failed_attempts"],
+            max_tokens=10_000,
+        ),
+    )
+    contract = ReceiverContract(
+        goal="Implement authentication",
+        required=["constraints"],
+        preferred=["evidence", "failed_attempts"],
+        max_tokens=small_only.packet_tokens,
+    )
+
+    result = compile_handoff(source, contract)
+
+    assert result.packet.evidence == []
+    assert result.packet.failed_attempts[0].content == "small useful failure"
+    assert result.packet_tokens <= contract.max_tokens
+
+
+def test_later_small_item_is_kept_when_earlier_item_in_same_section_is_too_big() -> (
+    None
+):
+    small_source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[
+            Message(content="must keep", tags={"constraints"}),
+            Message(content="small useful evidence", tags={"evidence"}),
+        ],
+    )
+    small_only = compile_handoff(
+        small_source,
+        ReceiverContract(
+            goal="Implement authentication",
+            required=["constraints"],
+            preferred=["evidence"],
+            max_tokens=10_000,
+        ),
+    )
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[
+            Message(content="must keep", tags={"constraints"}),
+            Message(content="x" * 2_000, tags={"evidence"}),
+            Message(content="small useful evidence", tags={"evidence"}),
+        ],
+    )
+    contract = ReceiverContract(
+        goal="Implement authentication",
+        required=["constraints"],
+        preferred=["evidence"],
+        max_tokens=small_only.packet_tokens,
+    )
+
+    result = compile_handoff(source, contract)
+
+    assert [message.content for message in result.packet.evidence] == [
+        "small useful evidence"
+    ]
+    assert result.packet_tokens <= contract.max_tokens
+
+
+class ExplodingSummarizer:
+    def summarize(self, messages, *, max_tokens, token_counter) -> Summary:
+        raise AssertionError("contract compilation must not call a summarizer")
+
+
+def test_contract_compilation_never_calls_summarizer() -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[Message(content="Keep this", tags={"decisions"})],
+    )
+    pipeline = HandoffPipeline([SummarizePolicy(ExplodingSummarizer(), max_tokens=100)])
+
+    result = compile_handoff(
+        source,
+        ReceiverContract(
+            goal="Implement authentication",
+            required=["decisions"],
+            max_tokens=1_000,
+        ),
+        pipeline=pipeline,
+    )
+
+    assert result.packet.decisions[0].content == "Keep this"
+    assert any(
+        event.policy == "summarize" and event.action == "skipped"
+        for event in result.report.events
+    )
+
+
+def test_redaction_expansion_denies_inside_pipeline_before_report_emit() -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[
+            Message(
+                content=" ".join(["a@b.co"] * 30),
+                tags={"evidence"},
+            )
+        ],
+    )
+    roomy = ReceiverContract(
+        goal="Implement authentication",
+        required=["evidence"],
+        max_tokens=10_000,
+    )
+    raw = compile_handoff(source, roomy)
+    redacted = compile_handoff(
+        source,
+        roomy,
+        pipeline=HandoffPipeline([RedactPolicy(detectors=["email"])]),
+    )
+    assert redacted.packet_tokens > raw.packet_tokens
+
+    emitted = []
+    strict_pipeline = HandoffPipeline(
+        [RedactPolicy(detectors=["email"])],
+        reporters=[CallbackReporter(emitted.append)],
+    )
+    strict = roomy.model_copy(update={"max_tokens": raw.packet_tokens})
+
+    with pytest.raises(BudgetExceededError) as captured:
+        compile_handoff(source, strict, pipeline=strict_pipeline)
+
+    assert captured.value.report is not None
+    assert captured.value.report.status == "denied"
+    assert captured.value.report.failed_policy == "receiver_contract"
+    assert captured.value.report.failure_code == "budget_exceeded"
+    assert len(emitted) == 1
+    assert emitted[0].status == "denied"
+
+
+def test_pipeline_cleans_goal_without_forwarding_unrequested_source_metadata() -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[Message(content="Keep this", tags={"decisions"})],
+        metadata={"irrelevant": "x" * 10_000},
+    )
+    pipeline = HandoffPipeline([RedactPolicy(detectors=["email"])])
+    contract = ReceiverContract(
+        goal="Send the result to coder@example.com",
+        required=["decisions"],
+        max_tokens=1_000,
+    )
+
+    result = compile_handoff(source, contract, pipeline=pipeline)
+
+    assert result.packet.goal == "Send the result to [REDACTED:email]"
+    assert "irrelevant" not in result.packet.to_envelope().metadata
+    assert result.packet_tokens <= contract.max_tokens
+
+
+def test_message_must_map_to_at_most_one_section() -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[
+            Message(
+                content="ambiguous",
+                kind="decisions",
+                tags={"evidence"},
+            )
+        ],
+    )
+    contract = ReceiverContract(
+        goal="Implement authentication",
+        required=["decisions"],
+        max_tokens=1_000,
+    )
+
+    with pytest.raises(ContractError, match="multiple receiver sections"):
+        compile_handoff(source, contract)
+
+
+def test_contract_rejects_duplicate_or_overlapping_sections() -> None:
+    with pytest.raises(ValidationError, match="duplicate"):
+        ReceiverContract(
+            goal="Implement authentication",
+            required=["decisions", "decisions"],
+            max_tokens=1_000,
+        )
+    with pytest.raises(ValidationError, match="both required and preferred"):
+        ReceiverContract(
+            goal="Implement authentication",
+            required=["decisions"],
+            preferred=["decisions"],
+            max_tokens=1_000,
+        )

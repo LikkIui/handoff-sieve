@@ -1,4 +1,4 @@
-"""Run the fixed offline RelayGuard handoff benchmark."""
+"""Run the fixed offline HandoffSieve handoff benchmark."""
 
 from __future__ import annotations
 
@@ -13,16 +13,16 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from relayguard import (
+from handoff_sieve import (
     HandoffEnvelope,
     HandoffPipeline,
+    HandoffSieveError,
     Message,
-    RelayGuardError,
     __version__,
 )
-from relayguard.models import Artifact, HandoffResult
-from relayguard.pipeline import PolicyRule
-from relayguard.policies import (
+from handoff_sieve.models import Artifact, HandoffResult
+from handoff_sieve.pipeline import PolicyRule
+from handoff_sieve.policies import (
     BudgetPolicy,
     ExactDedupPolicy,
     MockSummarizer,
@@ -31,7 +31,7 @@ from relayguard.policies import (
     SchemaPolicy,
     SummarizePolicy,
 )
-from relayguard.tokens import ApproxTokenCounter
+from handoff_sieve.tokens import ApproxTokenCounter
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -97,6 +97,18 @@ def load_fixture(path: Path = FIXTURE_PATH) -> dict[str, Any]:
         if secret not in fixture["summary_text"] or secret in source_text:
             raise ValueError("summary secrets must occur only in summary_text")
     return fixture
+
+
+def fixture_sha256(fixture: dict[str, Any]) -> str:
+    """Hash fixture meaning independently of checkout line endings."""
+
+    canonical = json.dumps(
+        fixture,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def build_envelope(fixture: dict[str, Any]) -> HandoffEnvelope:
@@ -401,12 +413,12 @@ def _run_failure_cases() -> list[dict[str, Any]]:
     for case in cases:
         actual_code: str | None = None
         actual_policy: str | None = None
-        checks: dict[str, bool] = {"raised_relayguard_error": False}
+        checks: dict[str, bool] = {"raised_handoff_sieve_error": False}
         try:
             operation: Callable[[], object] = case["operation"]
             operation()
-        except RelayGuardError as error:
-            checks["raised_relayguard_error"] = True
+        except HandoffSieveError as error:
+            checks["raised_handoff_sieve_error"] = True
             if error.report is not None:
                 report = error.report
                 report_json = report.model_dump_json()
@@ -591,11 +603,11 @@ def run_benchmark(*, runs: int = 5) -> dict[str, Any]:
     benchmark_result = {
         "schema_version": "1",
         "fixture": fixture["scenario_id"],
-        "fixture_sha256": hashlib.sha256(FIXTURE_PATH.read_bytes()).hexdigest(),
+        "fixture_sha256": fixture_sha256(fixture),
         "pipeline": {
             "config_fingerprint": pipeline.config_fingerprint,
             "token_counter": pipeline.token_counter.name,
-            "relayguard_version": __version__,
+            "package_version": __version__,
         },
         "runs": runs,
         "metrics": metrics,

@@ -5,22 +5,22 @@ from pathlib import Path
 
 import pytest
 
-from relayguard import (
+from handoff_sieve import (
     AuditExportError,
     CallbackReporter,
     HandoffPipeline,
     JsonlReporter,
 )
-from relayguard.exceptions import BudgetExceededError, ReservedFieldError
-from relayguard.models import HandoffEnvelope
-from relayguard.policies import (
+from handoff_sieve.exceptions import BudgetExceededError, ReservedFieldError
+from handoff_sieve.models import HandoffEnvelope
+from handoff_sieve.policies import (
     BudgetPolicy,
     MockSummarizer,
     Policy,
     SummarizePolicy,
     Summary,
 )
-from relayguard.policies.base import PolicyContext
+from handoff_sieve.policies.base import PolicyContext
 
 
 def test_callback_receives_completed_isolated_report_without_content() -> None:

@@ -1,7 +1,7 @@
 """Failure: distinct events converge to the same text after redaction."""
 
-from relayguard import HandoffPipeline
-from relayguard.policies import ExactDedupPolicy, RedactPolicy
+from handoff_sieve import HandoffPipeline
+from handoff_sieve.policies import ExactDedupPolicy, RedactPolicy
 
 
 def main() -> None:

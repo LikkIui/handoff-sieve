@@ -1,7 +1,7 @@
 """Failure: irrelevant context hides the one constraint the receiver needs."""
 
-from relayguard import HandoffPipeline, Message
-from relayguard.policies import BudgetPolicy, PreservePolicy
+from handoff_sieve import HandoffPipeline, Message
+from handoff_sieve.policies import BudgetPolicy, PreservePolicy
 
 
 def main() -> None:

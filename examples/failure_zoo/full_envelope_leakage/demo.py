@@ -1,8 +1,8 @@
 """Failure: sensitive text hides outside the ordinary message body."""
 
-from relayguard import HandoffEnvelope, HandoffPipeline, Message
-from relayguard.models import Artifact
-from relayguard.policies import RedactPolicy
+from handoff_sieve import HandoffEnvelope, HandoffPipeline, Message
+from handoff_sieve.models import Artifact
+from handoff_sieve.policies import RedactPolicy
 
 
 def main() -> None:

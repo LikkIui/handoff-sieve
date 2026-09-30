@@ -9,6 +9,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = [
+    ROOT / "examples" / "researcher_to_coder" / "demo.py",
+    ROOT / "examples" / "planner_to_executor" / "demo.py",
+    ROOT / "examples" / "researcher_to_reviewer" / "demo.py",
     ROOT / "examples" / "quickstart" / "run.py",
     ROOT / "examples" / "failure_zoo" / "secret_leakage" / "demo.py",
     ROOT / "examples" / "failure_zoo" / "context_flooding" / "demo.py",

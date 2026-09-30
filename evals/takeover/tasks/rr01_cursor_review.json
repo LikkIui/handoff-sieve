@@ -1,0 +1,152 @@
+{
+  "schema_version": "1",
+  "id": "rr01_cursor_review",
+  "route": "researcher_to_reviewer",
+  "title": "Review the active cursor patch against tied-row evidence",
+  "sender_state": {
+    "sender": "researcher",
+    "receiver": "reviewer",
+    "messages": [
+      {
+        "kind": "raw_search",
+        "content": [
+          "One article compares keyset and offset pagination for social feeds, but its examples use unique integer ids and do not review the active patch.",
+          "A database manual describes server-side cursors that hold a transaction open. The application uses stateless opaque cursors instead.",
+          "A vendor blog recommends descending indexes for reverse chronological timelines. The accepted endpoint remains ascending for this review.",
+          "A search result discusses total-page counts and approximate statistics. Page counts are not in the candidate change.",
+          "Several snippets cover GraphQL connection naming, edges, and nodes. The local API shape is already fixed and unrelated to the defect under review.",
+          "An ORM tutorial implements offset and limit with eager loading. The project does not use that ORM.",
+          "A caching article suggests putting the entire response behind a CDN. Cache behavior is outside the review acceptance rules.",
+          "A mobile performance post recommends fetching three pages ahead. Prefetch policy does not affect cursor correctness.",
+          "A design note considers showing page numbers in the UI. That idea was deferred.",
+          "A benchmarking transcript lists timings for several indexes but contains no correctness evidence about tied timestamps."
+        ]
+      },
+      {
+        "kind": "old_patch_notes",
+        "content": [
+          "cursor_patch_v1 used offset values encoded as text and was abandoned before review.",
+          "cursor_patch_v2 used the composite pair and handled ties, but it changed the cursor codec and was not submitted.",
+          "A scratch diff named cursor_patch_experiment sorted descending and targeted a different endpoint.",
+          "An uncommitted test prototype expected reverse navigation, which is not part of this candidate.",
+          "A reviewer comment on v1 mentioned query-plan cost; that comment does not establish a blocker for v3.",
+          "The archive also contains a corrected composite implementation prepared after the candidate, but the reviewer must assess the explicitly named active artifact rather than that later draft."
+        ]
+      },
+      {
+        "kind": "tool_log",
+        "content": [
+          "The public suite ran six unique-timestamp examples successfully because none placed a page boundary inside a timestamp tie.",
+          "A formatter changed no files in the candidate patch.",
+          "Static analysis accepted the timestamp comparison as type-correct.",
+          "An unrelated feed serialization suite reported twelve passing tests.",
+          "The fixture generator printed a line for every generated row and repeated timestamp; those routine lines contain no separate decision.",
+          "A query planner used the existing created_at index and reported a low estimated cost, which does not prove row completeness.",
+          "The test collector also listed account, billing, report, and notification modules that the patch never touches.",
+          "A documentation link checker completed successfully and is irrelevant to merge readiness."
+        ]
+      },
+      {
+        "kind": "constraints",
+        "content": "Review only candidate cursor_patch_v3. A merge-ready patch must preserve the opaque public cursor, return every row exactly once in ascending (created_at, id) order, use an exclusive boundary, raise ValueError for malformed cursors, and leave input rows unchanged. Report blockers only with registered ids: cursor_tie_skip, inclusive_duplicate, malformed_cursor_accepted, input_mutated."
+      },
+      {
+        "kind": "decisions",
+        "content": "The accepted design uses the pair (created_at, id) as the cursor key and compares row pairs lexicographically. created_at-only pagination was rejected because created_at is not unique."
+      },
+      {
+        "kind": "evidence",
+        "content": "The ungraded boundary fixture contains evt-002, evt-004, and evt-009 at the same timestamp, in ascending id order, and uses limit=1. Its recorded first page contains evt-002 and a cursor produced from that row. The remaining input rows and the candidate diff are available for the reviewer to determine the next-page behavior. Separate raw observations show malformed input raises ValueError and the caller-owned input list is unchanged."
+      },
+      {
+        "kind": "completed_work",
+        "content": "The candidate diff applies cleanly, formatting passes, and the six existing tests with unique timestamps pass. The tied-row review probe and registered blocker mapping are ready."
+      },
+      {
+        "kind": "failed_attempts",
+        "content": "Earlier v1 offset code and the unsubmitted v2 codec rewrite are not the review target. Reviewing either would produce a verdict for the wrong artifact."
+      },
+      {
+        "kind": "pending_work",
+        "content": "Determine whether cursor_patch_v3 is merge-ready under the registered acceptance rules and return its candidate id, verdict, and complete blocker id list."
+      },
+      {
+        "kind": "tool_results",
+        "content": "Public tests: 6 passed, but every public fixture uses unique timestamps. The tied-timestamp boundary fixture has been prepared but no pass/fail conclusion or blocker mapping has been recorded; review it against the attached candidate and acceptance registry."
+      }
+    ],
+    "artifacts": [
+      {
+        "name": "cursor_patch_v3",
+        "media_type": "text/x-diff",
+        "content": "diff --git a/src/task_app/pagination.py b/src/task_app/pagination.py\n@@\n def page_after(rows, cursor, limit):\n     boundary = decode_cursor(cursor) if cursor else None\n     ordered = sorted(rows, key=lambda row: (row.created_at, row.id))\n     if boundary is not None:\n         ordered = [row for row in ordered if row.created_at > boundary.created_at]\n     page = ordered[:limit]\n     return page, encode_cursor(page[-1]) if page else None\n"
+      },
+      {
+        "name": "cursor-acceptance-registry",
+        "media_type": "application/json",
+        "content": {
+          "candidate_id": "cursor_patch_v3",
+          "issue_ids": {
+            "cursor_tie_skip": "one or more rows sharing a boundary timestamp are never returned",
+            "inclusive_duplicate": "the boundary row appears again on the next page",
+            "malformed_cursor_accepted": "a malformed cursor does not raise ValueError",
+            "input_mutated": "reviewed pagination changes the caller-owned row list"
+          }
+        }
+      }
+    ],
+    "metadata": {
+      "catalog_id": "RR-01",
+      "fixture_status": "not_run"
+    }
+  },
+  "contract": {
+    "goal": "Review the active pagination candidate and decide whether it is merge-ready under the registered acceptance rules.",
+    "required": [
+      "constraints",
+      "decisions",
+      "evidence",
+      "pending_work",
+      "artifacts"
+    ],
+    "preferred": [
+      "completed_work",
+      "failed_attempts",
+      "tool_results"
+    ],
+    "max_tokens": 1050
+  },
+  "receiver_instruction": "Take over the review from the researcher. Assess only the active candidate artifact against the supplied acceptance rules and evidence. Return only one JSON object matching the declared output fields, with no explanation, prose, or Markdown outside it.",
+  "receiver_output_contract": {
+    "format": "json",
+    "required_fields": [
+      "candidate_id",
+      "verdict",
+      "blocking_issue_ids"
+    ]
+  },
+  "success_validator": {
+    "checks": [
+      {
+        "id": "reviews_active_candidate",
+        "path": "candidate_id",
+        "operator": "equals",
+        "expected": "cursor_patch_v3"
+      },
+      {
+        "id": "returns_correct_verdict",
+        "path": "verdict",
+        "operator": "equals",
+        "expected": "request_changes"
+      },
+      {
+        "id": "identifies_all_blockers",
+        "path": "blocking_issue_ids",
+        "operator": "equals",
+        "expected": [
+          "cursor_tie_skip"
+        ]
+      }
+    ]
+  }
+}

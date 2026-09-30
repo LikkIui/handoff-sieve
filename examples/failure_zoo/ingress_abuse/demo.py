@@ -2,8 +2,8 @@
 
 from collections.abc import Callable
 
-from relayguard import HandoffPipeline, RelayGuardError
-from relayguard.policies import BudgetPolicy
+from handoff_sieve import HandoffPipeline, HandoffSieveError
+from handoff_sieve.policies import BudgetPolicy
 
 
 def expect_denial(
@@ -14,7 +14,7 @@ def expect_denial(
 ) -> None:
     try:
         operation()
-    except RelayGuardError as error:
+    except HandoffSieveError as error:
         report = error.report
         assert report is not None
         assert report.status == "denied"

@@ -1,0 +1,163 @@
+{
+  "schema_version": "1",
+  "id": "rc01_composite_cursor",
+  "route": "researcher_to_coder",
+  "title": "Implement composite cursor pagination without skipping tied rows",
+  "sender_state": {
+    "sender": "researcher",
+    "receiver": "coder",
+    "messages": [
+      {
+        "kind": "research_notes",
+        "content": [
+          "Offset pagination is familiar to users and easy to demonstrate, but these notes concern a future admin search screen rather than the activity-feed takeover task.",
+          "One database vendor recommends approximate row counts for very deep pages. Row counts are outside the accepted activity-feed design and do not affect cursor construction.",
+          "A hosted search product offers snapshot pagination with a proprietary continuation token. The project is not adopting that service.",
+          "An early sketch proposed a created_at-only cursor because the first sample happened to contain unique timestamps. That sketch was explicitly rejected after tied rows were found.",
+          "Another discarded sketch encoded page number and page size in the cursor. It cannot remain stable while rows are inserted and is not the selected approach.",
+          "Index tuning for descending feeds was discussed for a later milestone. This task keeps the existing ascending public order.",
+          "A long comparison of base32 and base64 readability produced no product requirement. The existing cursor helper already owns opaque encoding.",
+          "The analytics team may eventually request filtering by actor type. No filter is part of this task.",
+          "Search snippets discussed server-side cursors tied to database connections. The current API is stateless and will not keep database sessions open.",
+          "A meeting also covered cache invalidation, feed retention, and mobile prefetch. None changes the accepted keyset ordering for this handoff."
+        ]
+      },
+      {
+        "kind": "tool_log",
+        "content": [
+          "Query-plan capture 01 completed against an unrelated million-row synthetic table; the output was archived for future index work.",
+          "Query-plan capture 02 repeated the same offset query with a warm cache and produced a shorter runtime.",
+          "Formatter run completed with no changes in the documentation package.",
+          "A crawler fetched six pagination articles and recorded titles, authors, navigation text, cookie banners, and footer links.",
+          "The local database probe printed connection setup, transaction begin, transaction rollback, and teardown lines for every sample.",
+          "A benchmark script compared page sizes 25, 50, and 100 for a different endpoint that has no timestamp ties.",
+          "Static analysis reported no findings in the current stub because the missing branch is represented by NotImplementedError.",
+          "A dependency audit listed optional database drivers that are not installed by this package.",
+          "The test collector discovered unrelated account, billing, export, and notification suites.",
+          "An exploratory log repeated the phrase page fetched successfully for each of eighty pages; it contains no acceptance decision."
+        ]
+      },
+      {
+        "kind": "meeting_notes",
+        "content": [
+          "The product meeting spent most of its time on feed naming, empty-state copy, skeleton loading, and the placement of a refresh button.",
+          "A designer asked whether the cursor could be visible in the URL. The answer was deferred and no URL work belongs to this task.",
+          "The release discussion considered screenshots, changelog wording, and a launch post for several unrelated features.",
+          "A later roadmap item may add reverse navigation. This takeover implements forward pagination only.",
+          "Ownership of the mobile feed was reassigned, but the Python pagination module and its public API remain unchanged.",
+          "Observability labels, dashboard colors, and alert thresholds were recorded for later planning and carry no coding requirement here."
+        ]
+      },
+      {
+        "kind": "constraints",
+        "content": "Keep page_after(rows, cursor, limit) and the existing opaque cursor codec public API. Sort ascending. A malformed cursor must raise ValueError. Do not add a dependency or change the input rows."
+      },
+      {
+        "kind": "decisions",
+        "content": "The accepted keyset is the lexicographically ordered pair (created_at, id). A decoded cursor identifies the last returned pair, and the next page must include only rows whose pair is strictly greater than it."
+      },
+      {
+        "kind": "evidence",
+        "content": "The fixed fixture has three records at 2026-04-12T09:00:00Z with ids evt-002, evt-004, and evt-009. The rejected created_at-only implementation skips evt-004 and evt-009 when a page ends at evt-002."
+      },
+      {
+        "kind": "completed_work",
+        "content": "ActivityRow, encode_cursor, decode_cursor, and the page_after stub already exist. Public tests cover unique timestamps and an empty final page, but not timestamp ties or malformed cursors."
+      },
+      {
+        "kind": "failed_attempts",
+        "content": "A created_at-only predicate was tried and rejected because rows sharing the boundary timestamp disappeared. Offset plus page number was also rejected because concurrent inserts change later pages."
+      },
+      {
+        "kind": "pending_work",
+        "content": "Implement composite cursor encode/decode and the exclusive lexicographic page_after selection. Cover timestamp ties, final-page behavior, and malformed cursor input."
+      },
+      {
+        "kind": "tool_results",
+        "content": "Baseline public suite: 6 passed. Manual tied-timestamp probe: expected ids evt-002, evt-004, evt-009 across the boundary; current stub has no result."
+      }
+    ],
+    "artifacts": [
+      {
+        "name": "pagination-workspace-map",
+        "media_type": "application/json",
+        "content": {
+          "implementation_file": "src/task_app/pagination.py",
+          "test_file": "tests/test_pagination.py",
+          "public_api": "page_after(rows, cursor, limit)",
+          "row_fields": [
+            "created_at",
+            "id",
+            "payload"
+          ],
+          "cursor_codec": "opaque URL-safe encoding owned by encode_cursor/decode_cursor"
+        }
+      }
+    ],
+    "metadata": {
+      "catalog_id": "RC-01",
+      "fixture_status": "not_run"
+    }
+  },
+  "contract": {
+    "goal": "Implement stable forward cursor pagination that does not skip records sharing a timestamp.",
+    "required": [
+      "constraints",
+      "decisions",
+      "evidence",
+      "completed_work",
+      "pending_work",
+      "artifacts"
+    ],
+    "preferred": [
+      "failed_attempts",
+      "tool_results"
+    ],
+    "max_tokens": 1100
+  },
+  "receiver_instruction": "Take over the pagination implementation task from the researcher. Read the supplied handoff, determine the implementation semantics and the cases that must be covered, then return only one JSON object matching the declared output fields. Do not include prose or Markdown outside that object.",
+  "receiver_output_contract": {
+    "format": "json",
+    "required_fields": [
+      "cursor_fields",
+      "comparison",
+      "malformed_cursor",
+      "acceptance_cases"
+    ]
+  },
+  "success_validator": {
+    "checks": [
+      {
+        "id": "uses_composite_cursor",
+        "path": "cursor_fields",
+        "operator": "equals",
+        "expected": [
+          "created_at",
+          "id"
+        ]
+      },
+      {
+        "id": "uses_exclusive_lexicographic_comparison",
+        "path": "comparison",
+        "operator": "equals",
+        "expected": "lexicographic_exclusive"
+      },
+      {
+        "id": "rejects_malformed_cursor",
+        "path": "malformed_cursor",
+        "operator": "equals",
+        "expected": "raise_value_error"
+      },
+      {
+        "id": "covers_required_cases",
+        "path": "acceptance_cases",
+        "operator": "equals",
+        "expected": [
+          "timestamp_ties",
+          "final_page",
+          "malformed_cursor"
+        ]
+      }
+    ]
+  }
+}

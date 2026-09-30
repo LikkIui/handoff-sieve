@@ -1,7 +1,7 @@
 """Failure: a handoff forwards credentials and personal data verbatim."""
 
-from relayguard import HandoffPipeline
-from relayguard.policies import RedactPolicy
+from handoff_sieve import HandoffPipeline
+from handoff_sieve.policies import RedactPolicy
 
 
 def main() -> None:

@@ -4,7 +4,35 @@
 0.22.3. The package constrains compatibility to the 0.22.x line until a later
 minor passes the integration suite.
 
-| SDK behavior | Status | RelayGuard behavior |
+## Send a compiled receiver view
+
+Compile the sender state first, then use `OpenAIHandoffPacketFilter` as the
+handoff input filter:
+
+```python
+from agents import handoff
+from handoff_sieve import compile_history
+from handoff_sieve.adapters import OpenAIHandoffPacketFilter
+
+compilation = compile_history(sender_state, receiver_contract)
+
+coder_handoff = handoff(
+    agent=coder,
+    input_filter=OpenAIHandoffPacketFilter(compilation.packet),
+)
+```
+
+The receiving agent sees one user item containing the packet's canonical JSON:
+the goal, fixed packet sections, artifacts, and tool results. The filter does
+not run the pipeline again and does not call a model. It removes the original
+history and pre-handoff items from the receiver view while preserving the
+SDK's original `new_items` for session history and preserving `run_context`.
+Only complete, client-managed `HandoffInputData` snapshots are supported.
+
+Use `OpenAIHandoffFilter` below when the SDK snapshot itself is the source that
+the ordinary policy pipeline should process.
+
+| SDK behavior | Status | HandoffSieve behavior |
 |---|---|---|
 | Client-managed `input_history` string or tuple | Supported | Included in one receiver-view envelope |
 | `pre_handoff_items` | Supported | Included and restored to SDK `InputItem` values |
@@ -28,7 +56,7 @@ the receiving model sees the filtered view without making a provider request.
 pipeline `CallbackReporter` or `JsonlReporter` when the report must be retained
 after `Runner.run_sync` crosses back into the caller's context.
 
-Control-item protection prevents RelayGuard selection, deduplication,
+Control-item protection prevents HandoffSieve selection, deduplication,
 summarization, and budget trimming from silently deleting an occurrence. A
 final adapter invariant then verifies that every protected control occurrence
 is still present and that recognized tool outputs have a preceding call with

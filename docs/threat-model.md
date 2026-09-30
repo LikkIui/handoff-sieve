@@ -1,6 +1,6 @@
 # Threat model
 
-RelayGuard protects an agent handoff boundary. The untrusted caller may control
+HandoffSieve protects an agent handoff boundary. The untrusted caller may control
 message content, structured keys and values, tags, metadata, artifacts, sender
 and receiver identifiers, and route names.
 
@@ -20,7 +20,7 @@ and receiver identifiers, and route names.
 ## Trust assumptions
 
 - Python application code, installed custom policies, and reviewed framework
-  adapters are trusted code. RelayGuard is not a Python sandbox.
+  adapters are trusted code. HandoffSieve is not a Python sandbox.
 - `_process_trusted_envelope` accepts internal state created by an adapter;
   untrusted payloads must use `process` or public `process_envelope`.
 - Configuration files are controlled by the application operator.

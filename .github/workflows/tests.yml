@@ -11,14 +11,15 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: python -m pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
-      - run: mypy src
+      - run: mypy src evals
+      - run: python -m evals.takeover.validate --validate
       - run: python -m benchmarks.run --check
 
   test:
@@ -28,8 +29,8 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install -e ".[dev,tiktoken]"
@@ -41,8 +42,8 @@ jobs:
       matrix:
         openai-agents-version: ["0.22.0", "0.22.3"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: >-
@@ -50,18 +51,78 @@ jobs:
           "openai-agents==${{ matrix.openai-agents-version }}"
       - run: python -m pytest tests/test_openai_adapter.py
 
+  langgraph-adapter:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        langgraph-version: ["1.0.0", "1.2.12"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: >-
+          python -m pip install -e ".[dev]"
+          "langgraph==${{ matrix.langgraph-version }}"
+      - run: python -m pytest tests/test_langgraph_adapter.py
+
   wheel:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: python -m pip install build
+      - run: python -m pip install ".[release]"
       - run: python -m build
+      - run: python -m twine check --strict dist/*
       - run: python -m venv wheel-venv
-      - run: wheel-venv/bin/python -m pip install dist/*.whl
-      - run: >-
-          cd /tmp &&
-          "$GITHUB_WORKSPACE/wheel-venv/bin/python" -I -c
-          "import relayguard; assert relayguard.__version__ == '0.1.0'"
+      - name: Install wheel with optional integrations
+        run: |
+          wheel_path="$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
+          wheel-venv/bin/python -m pip install "${wheel_path}[langgraph,openai,tiktoken]"
+          wheel-venv/bin/python -m pip check
+      - name: Verify the installed wheel outside the checkout
+        run: |
+          cd /tmp
+          "$GITHUB_WORKSPACE/wheel-venv/bin/python" -I \
+            "$GITHUB_WORKSPACE/scripts/verify_installed.py" \
+            --distribution handoff-sieve \
+            --expected-version 0.3.0a1 \
+            --forbid-source-root "$GITHUB_WORKSPACE/src" \
+            --openai \
+            --langgraph
+          "$GITHUB_WORKSPACE/wheel-venv/bin/python" -I \
+            "$GITHUB_WORKSPACE/examples/quickstart/run.py"
+          "$GITHUB_WORKSPACE/wheel-venv/bin/python" -I \
+            "$GITHUB_WORKSPACE/examples/researcher_to_coder/demo.py"
+          "$GITHUB_WORKSPACE/wheel-venv/bin/python" -I \
+            "$GITHUB_WORKSPACE/examples/planner_to_executor/demo.py"
+          "$GITHUB_WORKSPACE/wheel-venv/bin/python" -I \
+            "$GITHUB_WORKSPACE/examples/researcher_to_reviewer/demo.py"
+          "$GITHUB_WORKSPACE/wheel-venv/bin/python" -I \
+            "$GITHUB_WORKSPACE/examples/langgraph_handoff/run.py"
+          for demo in "$GITHUB_WORKSPACE"/examples/failure_zoo/*/demo.py; do
+            "$GITHUB_WORKSPACE/wheel-venv/bin/python" -I "$demo"
+          done
+      - run: python -m venv sdist-venv
+      - name: Verify the installed source distribution
+        run: |
+          sdist-venv/bin/python -m pip install dist/*.tar.gz
+          sdist-venv/bin/python -m pip check
+          cd /tmp
+          "$GITHUB_WORKSPACE/sdist-venv/bin/python" -I \
+            "$GITHUB_WORKSPACE/scripts/verify_installed.py" \
+            --distribution handoff-sieve \
+            --expected-version 0.3.0a1 \
+            --forbid-source-root "$GITHUB_WORKSPACE/src"
+      - name: Verify the source distribution is self-contained
+        run: |
+          mkdir /tmp/handoff-sieve-sdist
+          tar -xzf dist/*.tar.gz -C /tmp/handoff-sieve-sdist
+          sdist_root="$(find /tmp/handoff-sieve-sdist -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          sdist-venv/bin/python -m pip install -e "${sdist_root}[dev,langgraph,openai,tiktoken]"
+          cd "$sdist_root"
+          "$GITHUB_WORKSPACE/sdist-venv/bin/python" -m pytest
+          "$GITHUB_WORKSPACE/sdist-venv/bin/python" -m evals.takeover.validate --validate
+          "$GITHUB_WORKSPACE/sdist-venv/bin/python" -m benchmarks.run --check

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from relayguard import HandoffPipeline, Message
-from relayguard.exceptions import (
+from handoff_sieve import HandoffPipeline, Message
+from handoff_sieve.exceptions import (
     AmbiguousRouteError,
     ConfigurationError,
     UnmatchedRouteError,

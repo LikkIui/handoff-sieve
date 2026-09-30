@@ -1,7 +1,7 @@
 """Failure: a summarizer generates a new secret after input redaction."""
 
-from relayguard import HandoffPipeline
-from relayguard.policies import MockSummarizer, RedactPolicy, SummarizePolicy
+from handoff_sieve import HandoffPipeline
+from handoff_sieve.policies import MockSummarizer, RedactPolicy, SummarizePolicy
 
 
 def main() -> None:

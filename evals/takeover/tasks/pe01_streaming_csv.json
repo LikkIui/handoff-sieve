@@ -1,0 +1,163 @@
+{
+  "schema_version": "1",
+  "id": "pe01_streaming_csv",
+  "route": "planner_to_executor",
+  "title": "Execute the streaming CSV report plan without regressing JSON",
+  "sender_state": {
+    "sender": "planner",
+    "receiver": "executor",
+    "messages": [
+      {
+        "kind": "backlog",
+        "content": [
+          "A future epic proposes XLSX exports with cell formatting, frozen headers, charts, and multiple worksheets. It is not part of the accepted CSV milestone.",
+          "Another backlog item proposes rendering reports as PDF through a browser worker. No browser or PDF dependency should enter this task.",
+          "The billing team may eventually meter export volume and retain usage records. Metering is not required for the report endpoint change.",
+          "A mobile feature request asks for offline export downloads and background notifications. The current executor only changes the server response path.",
+          "A product idea suggests saved export presets with names and ownership. Preset persistence has not been designed or accepted.",
+          "There is an open discussion about moving old exports to object storage. This task streams the current request and creates no stored export artifact.",
+          "Internationalized column labels were proposed for a later release. The first CSV format uses the existing stable field names.",
+          "A roadmap note mentions custom delimiters and spreadsheet locale detection. Neither belongs to the accepted plan.",
+          "The analytics backlog contains dashboard filters, scheduled emails, and cohort comparison. Those items do not change report row iteration.",
+          "A speculative API v2 could use content negotiation instead of a query parameter. The current public endpoint remains v1."
+        ]
+      },
+      {
+        "kind": "meeting_notes",
+        "content": [
+          "The planning meeting reviewed release naming, owner rotations, screenshots, documentation examples, and a possible launch date.",
+          "Several minutes covered whether the button should say Export, Download, or Save. UI copy does not affect the server contract in this task.",
+          "A stakeholder asked for zipped exports containing several report types. That request was deferred.",
+          "The team discussed using a job queue for multi-gigabyte exports. The accepted milestone handles the existing synchronous endpoint only.",
+          "An observability proposal listed dashboards for queue depth, object storage size, and email delivery. None applies to the selected implementation.",
+          "The support team supplied examples of old Excel versions and regional separators. The current CSV output remains comma-delimited UTF-8.",
+          "A later meeting will decide retention policy. Streaming responses are not retained, so no decision is needed now.",
+          "The release checklist includes changelog, screenshots, announcement review, and translation. These are unrelated to receiver code changes."
+        ]
+      },
+      {
+        "kind": "tool_log",
+        "content": [
+          "A load probe generated a 180 MB JSON response from a synthetic dataset and printed one progress line for each ten thousand records.",
+          "A crawler collected documentation for five CSV libraries even though the accepted plan uses the standard library.",
+          "The test runner listed twenty-four passing report tests and hundreds of unrelated passing tests from accounts and notifications.",
+          "A memory sampler printed process RSS every second during an unrelated image export experiment.",
+          "Formatting and lint commands completed without changes before the CSV serializer existed.",
+          "A prototype wrote the entire CSV to a temporary file; it was discarded because the endpoint should stream directly.",
+          "A spreadsheet application warning about automatic date conversion was recorded for documentation, not implementation.",
+          "The API access log repeated successful JSON requests with different user agents and carries no additional acceptance decision."
+        ]
+      },
+      {
+        "kind": "constraints",
+        "content": "Keep the existing GET /reports JSON response byte-for-byte compatible when format is absent or json. CSV must be UTF-8, include a stable header, handle an empty result, and consume the row source once without list(), len(), rewind, or a second iteration."
+      },
+      {
+        "kind": "decisions",
+        "content": "Activate CSV through the existing format query parameter with the value csv. Reuse ReportService.iter_rows() and stream serializer chunks directly from that iterator. Do not add XLSX, PDF, queues, temporary export files, or storage."
+      },
+      {
+        "kind": "evidence",
+        "content": "ReportService.iter_rows() already yields dictionaries in the required column order. The current JSON path peaks at about 180 MB on the largest synthetic fixture because JSON still materializes; CSV can avoid that by consuming the iterator directly."
+      },
+      {
+        "kind": "completed_work",
+        "content": "The endpoint already validates format=json, authorizes report access, opens the service iterator, and has regression snapshots. A csv_response helper stub and content-type constant have been added but are not connected."
+      },
+      {
+        "kind": "failed_attempts",
+        "content": "A prototype called list(iter_rows()) before passing rows to csv.writer, which defeated streaming. A second prototype wrote a temp file, adding cleanup and disk use without a requirement. Both were rejected."
+      },
+      {
+        "kind": "pending_work",
+        "content": "Connect format=csv to csv_response, write the fixed id,name,total header, encode Unicode correctly, emit a header-only empty result, and add a single-pass sentinel test plus the existing JSON regression suite."
+      },
+      {
+        "kind": "tool_results",
+        "content": "Baseline: pytest tests/test_reports.py reports 24 passed. The provided OnePassRows fixture raises AssertionError if code asks for length, converts it to a list, or iterates it more than once."
+      }
+    ],
+    "artifacts": [
+      {
+        "name": "csv-execution-map",
+        "media_type": "application/json",
+        "content": {
+          "endpoint_file": "src/task_app/reports/api.py",
+          "serializer_file": "src/task_app/reports/csv_response.py",
+          "test_file": "tests/test_reports.py",
+          "activation": "GET /reports?format=csv",
+          "row_source": "ReportService.iter_rows()",
+          "columns": [
+            "id",
+            "name",
+            "total"
+          ],
+          "regression_path": "GET /reports and GET /reports?format=json"
+        }
+      }
+    ],
+    "metadata": {
+      "catalog_id": "PE-01",
+      "fixture_status": "not_run"
+    }
+  },
+  "contract": {
+    "goal": "Execute the accepted plan for streaming CSV report output while preserving the existing JSON response.",
+    "required": [
+      "constraints",
+      "decisions",
+      "completed_work",
+      "pending_work",
+      "artifacts"
+    ],
+    "preferred": [
+      "evidence",
+      "failed_attempts",
+      "tool_results"
+    ],
+    "max_tokens": 1050
+  },
+  "receiver_instruction": "Take over the report-export execution task from the planner. Use the supplied handoff to identify the selected activation path, delivery behavior, existing row source, and cases that must be verified. Return only one JSON object matching the declared output fields, with no prose or Markdown outside it.",
+  "receiver_output_contract": {
+    "format": "json",
+    "required_fields": [
+      "activation",
+      "delivery_mode",
+      "row_source",
+      "acceptance_cases"
+    ]
+  },
+  "success_validator": {
+    "checks": [
+      {
+        "id": "uses_selected_activation",
+        "path": "activation",
+        "operator": "equals",
+        "expected": "format=csv"
+      },
+      {
+        "id": "keeps_response_streaming",
+        "path": "delivery_mode",
+        "operator": "equals",
+        "expected": "streaming"
+      },
+      {
+        "id": "reuses_existing_iterator",
+        "path": "row_source",
+        "operator": "equals",
+        "expected": "ReportService.iter_rows()"
+      },
+      {
+        "id": "covers_csv_and_regression_cases",
+        "path": "acceptance_cases",
+        "operator": "equals",
+        "expected": [
+          "empty_result",
+          "unicode",
+          "single_pass_iterator",
+          "json_regression"
+        ]
+      }
+    ]
+  }
+}

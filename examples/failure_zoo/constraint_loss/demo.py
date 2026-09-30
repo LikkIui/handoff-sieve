@@ -1,7 +1,7 @@
 """Failure: a naive summary replaces a critical instruction."""
 
-from relayguard import HandoffPipeline, Message
-from relayguard.policies import MockSummarizer, PreservePolicy, SummarizePolicy
+from handoff_sieve import HandoffPipeline, Message
+from handoff_sieve.policies import MockSummarizer, PreservePolicy, SummarizePolicy
 
 
 def main() -> None:
@@ -38,7 +38,7 @@ def main() -> None:
     assert result.report.protected_messages == 1
 
     print("Naive summary:", naive_summary)
-    print("RelayGuard handoff:", transmitted)
+    print("HandoffSieve handoff:", transmitted)
     print("Result: the protected constraint survived summarization")
 
 

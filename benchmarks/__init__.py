@@ -1,1 +1,1 @@
-"""Deterministic offline RelayGuard benchmarks."""
+"""Deterministic offline HandoffSieve benchmarks."""

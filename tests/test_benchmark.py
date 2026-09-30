@@ -8,6 +8,7 @@ import pytest
 from benchmarks.run import (
     README_PATH,
     RESULTS_PATH,
+    fixture_sha256,
     load_fixture,
     render_readme_table,
     run_benchmark,
@@ -44,6 +45,20 @@ def test_fixture_cannot_claim_vacuous_recall(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="cannot be empty"):
         load_fixture(path)
+
+
+def test_fixture_hash_ignores_json_formatting_and_line_endings(tmp_path: Path) -> None:
+    fixture = load_fixture()
+    compact = tmp_path / "compact.json"
+    pretty = tmp_path / "pretty.json"
+    compact.write_bytes(json.dumps(fixture, separators=(",", ":")).encode("utf-8"))
+    pretty.write_bytes(
+        json.dumps(fixture, indent=2, ensure_ascii=False)
+        .replace("\n", "\r\n")
+        .encode("utf-8")
+    )
+
+    assert fixture_sha256(load_fixture(compact)) == fixture_sha256(load_fixture(pretty))
 
 
 def test_determinism_gate_requires_repeated_runs() -> None:
