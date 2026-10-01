@@ -291,9 +291,14 @@ v0.1 到 v0.3 按以下顺序完成：
   tool-call/result 配对校验、receiver view 替换和真实 `StateGraph` 离线示例。
 
 v0.3 的产品实现与首轮验证已经闭环。`0.3.0a1` 的 wheel、sdist、`twine --strict`、干净
-wheel/sdist 安装和包外 LangGraph 示例均已通过。下一步是把当前改动整理成可评审提交，在
-干净 checkout 跑完 Python 3.10–3.13、OpenAI Agents SDK 和 LangGraph 兼容矩阵，再进入
-GitHub/PyPI prerelease 发布；在出现真实用户反馈前不扩展更多框架。
+wheel/sdist 安装和包外 LangGraph 示例均已通过。Python 3.10–3.13、两个 OpenAI Agents
+SDK 版本、两个 LangGraph 版本及打包检查组成的 10 项云端 CI 已全部通过；公开仓库
+`LikkIui/handoff-sieve` 和 `v0.3.0a1` GitHub 预发布已经上线，附件可匿名下载且校验值一致。
+
+当前下一步是配置 PyPI pending publisher，使用 `publish-pypi.yml` 上传 GitHub 上已经
+验证的同一份安装包，并从 PyPI 干净安装复核。发布流程和账号填写项见
+[PyPI 发布说明](pypi-publishing.md)。PyPI 上线后优先收集真实 clone/install/takeover
+反馈，修正影响首次使用的具体问题；在出现真实用户需求前不扩展更多框架。
 
 ## 最高优先级停止条件
 

@@ -1,0 +1,171 @@
+name: Publish to PyPI
+
+"on":
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published GitHub release to upload without rebuilding
+        required: true
+        default: v0.3.0a1
+        type: string
+      publish:
+        description: Upload to PyPI (leave off to verify the release only)
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Validate the requested version
+        id: version
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          tag = os.environ["RELEASE_TAG"]
+          if not re.fullmatch(r"v\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?", tag):
+              raise SystemExit("Expected a version tag such as v0.3.0a1")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version={tag[1:]}\n")
+          PY
+      - name: Require a published release and successful source CI
+        run: |
+          test "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = false
+          release_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq '.sha')"
+          passed="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$release_sha&per_page=100" --jq '[.workflow_runs[] | select(.path == ".github/workflows/tests.yml" and .conclusion == "success")] | length')"
+          test "$passed" -gt 0
+      - name: Download the existing release files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --dir release-assets \
+            --pattern "handoff_sieve-${VERSION}-py3-none-any.whl" \
+            --pattern "handoff_sieve-${VERSION}.tar.gz" \
+            --pattern SHA256SUMS
+      - name: Verify checksums and select the two distributions
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          import re
+          import shutil
+          root = Path("release-assets")
+          version = os.environ["VERSION"]
+          expected = {f"handoff_sieve-{version}-py3-none-any.whl", f"handoff_sieve-{version}.tar.gz"}
+          lines = (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+          if len(lines) != 2:
+              raise SystemExit("Expected exactly two distribution checksums")
+          checksums = {}
+          for line in lines:
+              digest, name = line.split()
+              if not re.fullmatch(r"[0-9a-f]{64}", digest) or name not in expected:
+                  raise SystemExit("Unexpected checksum entry")
+              checksums[name] = digest
+          if set(checksums) != expected or {p.name for p in root.iterdir()} != expected | {"SHA256SUMS"}:
+              raise SystemExit("Missing or unexpected release files")
+          Path("dist").mkdir()
+          for name, digest in checksums.items():
+              if hashlib.sha256((root / name).read_bytes()).hexdigest() != digest:
+                  raise SystemExit(f"Checksum mismatch: {name}")
+              shutil.copyfile(root / name, Path("dist") / name)
+          PY
+      - name: Check metadata and the installed release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python -m pip install "twine>=6,<7"
+          python -m twine check --strict dist/*
+          python -m pip install dist/*.whl
+          python -m pip check
+          python -I scripts/verify_installed.py \
+            --distribution handoff-sieve --expected-version "$VERSION" \
+            --forbid-source-root "$GITHUB_WORKSPACE/src"
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: verified-release
+          path: |
+            dist/
+            release-assets/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    if: inputs.publish && github.ref == 'refs/heads/main'
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/handoff-sieve/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: verified-release
+          path: release-bundle
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: release-bundle/dist/
+
+  verify-pypi:
+    needs: [prepare, publish]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: verified-release
+          path: release-bundle
+      - name: Compare PyPI files with the GitHub release
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import urllib.request
+          url = f"https://pypi.org/pypi/handoff-sieve/{os.environ['VERSION']}/json"
+          with urllib.request.urlopen(url, timeout=30) as response:
+              files = {item["filename"]: item["digests"]["sha256"] for item in json.load(response)["urls"]}
+          for line in Path("release-bundle/release-assets/SHA256SUMS").read_text(encoding="utf-8").splitlines():
+              digest, name = line.split()
+              if files.get(name) != digest:
+                  raise SystemExit(f"PyPI file differs from the GitHub release: {name}")
+          PY
+      - name: Install from PyPI and verify outside the checkout
+        run: |
+          python -m pip install --no-cache-dir --index-url https://pypi.org/simple "handoff-sieve==$VERSION"
+          python -m pip check
+          python -I scripts/verify_installed.py \
+            --distribution handoff-sieve --expected-version "$VERSION" \
+            --forbid-source-root "$GITHUB_WORKSPACE/src"

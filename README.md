@@ -100,11 +100,18 @@ remains. The output is a typed packet that another agent can consume directly.
 
 ## Status
 
-This repository is an unpublished `0.3.0a1` alpha candidate. The receiver
+The [`0.3.0a1` GitHub prerelease](https://github.com/LikkIui/handoff-sieve/releases/tag/v0.3.0a1)
+is available. PyPI publication is pending account configuration. The receiver
 contract, structured packet, local history normalizer, policy pipeline,
 20-task product checkpoint, and optional OpenAI Agents SDK and LangGraph
 adapters are implemented. Token counts use an explicitly labelled UTF-8
 estimate by default.
+
+Install the published wheel directly:
+
+```bash
+python -m pip install "https://github.com/LikkIui/handoff-sieve/releases/download/v0.3.0a1/handoff_sieve-0.3.0a1-py3-none-any.whl"
+```
 
 ## Install from source
 

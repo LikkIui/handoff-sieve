@@ -6,9 +6,10 @@ detected.
 
 ## Supported versions
 
-Before the first public prerelease, only the current `main` branch receives
-security fixes. After publication, this table will identify supported release
-lines explicitly.
+| Version | Security fixes |
+|---|---|
+| Current `main` and `0.3.0a1` | Supported |
+| Earlier internal candidates | Not supported |
 
 ## Important limitations
 

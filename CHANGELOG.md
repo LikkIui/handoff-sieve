@@ -9,6 +9,16 @@ changelog and migration notes explain them.
 
 ### Added
 
+- A manually triggered PyPI Trusted Publishing workflow that verifies and
+  reuses existing GitHub release files, with an upload-free dry run and a
+  post-upload PyPI installation check.
+
+## [0.3.0a1] - 2026-10-01
+
+The first public GitHub prerelease. PyPI publication is pending account setup.
+
+### Added
+
 - `ReceiverContract`, `HandoffPacket`, and deterministic `compile_handoff()`
   for building budgeted, receiver-specific task takeover context.
 - `compile_history()` and `RuleBasedHistoryNormalizer` for turning ordinary
@@ -56,11 +66,6 @@ changelog and migration notes explain them.
   repository `handoff-sieve`.
 - Refocused the product roadmap on context and handoff optimization through
   v0.3; enterprise security and cross-organization protocol work is future-only.
-
-## [0.3.0a1] - Unreleased
-
-The first planned public prerelease. It includes the original policy pipeline
-and the complete v0.1–v0.3 receiver-specific handoff path described above.
 
 ## [0.2.0a1] - Not released
 
