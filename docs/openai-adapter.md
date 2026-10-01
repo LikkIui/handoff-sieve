@@ -6,9 +6,9 @@ minor passes the integration suite.
 
 ## Compile the current SDK history at handoff
 
-The `0.3.0a2.dev0` checkout adds `OpenAIReceiverContractFilter`. Install the
-checkout with `python -m pip install -e ".[openai]"`; this API is not in the
-published `0.3.0a1` wheel.
+`0.3.0a2` adds `OpenAIReceiverContractFilter`. Install the checkout with
+`python -m pip install -e ".[openai]"`, or install the GitHub release wheel with
+the `openai` extra. This API is not in the older `0.3.0a1` wheel.
 
 ```python
 from agents import handoff

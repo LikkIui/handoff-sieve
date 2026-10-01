@@ -3,7 +3,7 @@
 `0.3.0a1` is the first public prerelease. Users of the earlier copied RelayGuard
 prototype should review these changes before replacing it.
 
-## Unreleased `0.3.0a2.dev0`
+## `0.3.0a2`
 
 - Compilation results add optional `budget: BudgetReport`. Compiler-generated
   results populate it; callers constructing results directly can omit it.

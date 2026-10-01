@@ -8,7 +8,7 @@ detected.
 
 | Version | Security fixes |
 |---|---|
-| Current `main` and `0.3.0a1` | Supported |
+| Current `main`, `0.3.0a2`, and `0.3.0a1` | Supported |
 | Earlier internal candidates | Not supported |
 
 ## Important limitations

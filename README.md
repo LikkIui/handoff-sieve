@@ -101,21 +101,21 @@ remains. The output is a typed packet that another agent can consume directly.
 
 ## Install
 
-The [`0.3.0a1` GitHub prerelease](https://github.com/LikkIui/handoff-sieve/releases/tag/v0.3.0a1)
+The [`0.3.0a2` GitHub prerelease](https://github.com/LikkIui/handoff-sieve/releases/tag/v0.3.0a2)
 is available. PyPI publication is paused while account setup is completed.
 Install the published package directly:
 
 ```bash
-python -m pip install "https://github.com/LikkIui/handoff-sieve/releases/download/v0.3.0a1/handoff_sieve-0.3.0a1-py3-none-any.whl"
+python -m pip install "https://github.com/LikkIui/handoff-sieve/releases/download/v0.3.0a2/handoff_sieve-0.3.0a2-py3-none-any.whl"
 ```
 
 The demos above are in the GitHub checkout. For development, run
 `python -m pip install -e ".[dev]"` followed by `python -m pytest` there.
 Tests and offline demos do not require credentials.
 
-The checkout is now `0.3.0a2.dev0`. The live SDK contract filter, missing-state
-diagnostics, and budget feedback are new on `main`; they are not in the existing
-`0.3.0a1` release wheel.
+The checkout and release are `0.3.0a2`. The live SDK contract filter, missing-state
+diagnostics, and budget feedback are included. The older `0.3.0a1` release is
+still available with its original files.
 
 Token counts use an explicitly labelled UTF-8 estimate by default. Optional
 model-aware text counting is available with the `tiktoken` extra and
@@ -350,7 +350,7 @@ evidence for the product's downstream-success claim.
 | Audited failure cases | 5/5 |
 | Audit completeness | 100.0% |
 | Estimated tokens | 903 original → 556 transmitted; 283 summarizer; 64 net saved |
-| Pipeline latency | p50 2.451 ms; p95 4.279 ms on the generating machine |
+| Pipeline latency | p50 3.013 ms; p95 4.121 ms on the generating machine |
 <!-- benchmark-results:end -->
 
 </details>

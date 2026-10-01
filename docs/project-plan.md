@@ -3,7 +3,7 @@
 > 状态：历史接管与工程记录；当前开发优先级以 `iteration-roadmap.md` 为准
 > 修订日期：2026-10-01
 > 正式名称：HandoffSieve；distribution `handoff-sieve`；import
-> `handoff_sieve`。公开仓库为 `LikkIui/handoff-sieve`，GitHub `v0.3.0a1` 已发布，PyPI 暂缓。
+> `handoff_sieve`。公开仓库为 `LikkIui/handoff-sieve`，当前 GitHub alpha 为 `0.3.0a2`，PyPI 暂缓。
 >
 > **产品版本路线已重新调研并移至 [`iteration-roadmap.md`](iteration-roadmap.md)。**
 > 本文件继续记录 0.1 接管、安全基线和既有工作；其中阶段 6/7 的旧描述不再作为
@@ -17,12 +17,13 @@ v0.1–v0.3 的核心实现、20 项真实接管评测及两个框架适配已�
 下载。PyPI 因维护者邮箱问题暂停，不是产品开发阻塞。当前新增同一历史面向 coder /
 reviewer 的双接收方 demo，已用发布 wheel 在源码目录外验证，README 提供完整上手路径。
 
-`0.3.0a2.dev0` 已加入 OpenAI SDK 实时 contract filter 和实际工具 → 交接流程，修复
+`0.3.0a2` 已加入 OpenAI SDK 实时 contract filter 和实际工具 → 交接流程，修复
 运行中新状态未自动纳入、同一消息多个 section 被归入首个标题两个缺口。两个 live coder
 条件均通过 6/6；网关 usage 异常如实保留，不宣称本轮账单节省。缺失状态的结构化反馈
 和修正示例已补齐，SDK 缺失时阻止交接、补正后完成 6/6。预算反馈也已实现：显示必要
 状态占用、剩余空间和处理前后的 preferred 预算省略，增大预算可恢复证据且必要状态不变。
-下一步收敛 `0.3.0a2` GitHub 安装包，PyPI 继续暂缓；不扩框架或追加模型试验。
+这些改进已收敛进 `0.3.0a2` GitHub 安装包范围，PyPI 继续暂缓；后续优先复现真实用户
+接管反馈，改进状态筛选与任务质量，不扩框架或盲目追加模型试验。
 下面保留的是历史工程记录，
 其旧版本号和当时的未完成项不代表当前状态；最新优先级见迭代路线。
 

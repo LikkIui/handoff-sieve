@@ -1,8 +1,8 @@
 # Compile the latest state at an actual SDK handoff
 
 This example uses a real OpenAI Agents SDK `Runner`, a function tool, and a
-researcher-to-coder handoff. The new APIs are on `main` (`0.3.0a2.dev0`), not
-in the existing `0.3.0a1` wheel.
+researcher-to-coder handoff. The new APIs are included in `0.3.0a2`; the older
+`0.3.0a1` wheel does not contain them.
 
 From the repository checkout:
 

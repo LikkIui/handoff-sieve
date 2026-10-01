@@ -7,8 +7,13 @@ changelog and migration notes explain them.
 
 ## [Unreleased]
 
-Current development version: `0.3.0a2.dev0`. The published `0.3.0a1` release
-files remain unchanged.
+No unreleased changes.
+
+## [0.3.0a2] - 2026-10-01
+
+Runtime receiver-contract compilation, missing-state recovery, and budget
+feedback are now included in the installable GitHub prerelease. PyPI remains
+paused; the published `0.3.0a1` release files remain unchanged.
 
 ### Added
 
