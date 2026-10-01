@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from handoff_sieve.compiler import ContractDiagnostics
+    from handoff_sieve.normalization import NormalizationReport
     from handoff_sieve.report import AuditReport
 
 
@@ -31,6 +33,23 @@ class ConfigurationError(HandoffSieveError):
 
 class ContractError(HandoffSieveError):
     """Raised when sender state cannot satisfy a receiver contract."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        report: AuditReport | None = None,
+        diagnostics: ContractDiagnostics | None = None,
+    ) -> None:
+        super().__init__(message, report=report)
+        self.diagnostics = diagnostics
+        self.normalization: NormalizationReport | None = None
+
+    def __str__(self) -> str:
+        message = super().__str__()
+        if self.diagnostics is not None:
+            return message + "\n" + self.diagnostics.to_text()
+        return message
 
 
 class UnmatchedRouteError(HandoffSieveError):

@@ -130,8 +130,65 @@ def test_required_section_missing_fails_clearly() -> None:
         max_tokens=1_000,
     )
 
-    with pytest.raises(ContractError, match="decisions"):
+    with pytest.raises(ContractError, match="decisions") as captured:
         compile_handoff(source, contract)
+
+    diagnostics = captured.value.diagnostics
+    assert diagnostics is not None
+    assert diagnostics.stage == "sender_state"
+    assert diagnostics.missing_sections == ("decisions",)
+    assert diagnostics.section_counts["evidence"] == 1
+    assert diagnostics.section_counts["decisions"] == 0
+    assert diagnostics.unclassified_message_indices == ()
+    assert "Message(kind='decisions'" in diagnostics.recovery_hints["decisions"]
+    assert "Only evidence" not in diagnostics.model_dump_json()
+    assert captured.value.normalization is None
+
+
+def test_artifact_diagnostic_points_to_artifacts_instead_of_message_labels() -> None:
+    with pytest.raises(ContractError) as captured:
+        compile_handoff(
+            HandoffEnvelope(sender="researcher", receiver="coder"),
+            ReceiverContract(goal="Implement", required=("artifacts",), max_tokens=500),
+        )
+    diagnostics = captured.value.diagnostics
+    assert diagnostics is not None
+    assert diagnostics.missing_sections == ("artifacts",)
+    assert "HandoffEnvelope.artifacts" in diagnostics.recovery_hints["artifacts"]
+    assert "Message(kind=" not in diagnostics.recovery_hints["artifacts"]
+
+
+def test_removed_required_artifact_has_pipeline_diagnostic_and_denied_report() -> None:
+    from handoff_sieve.policies.base import Policy, PolicyContext
+
+    class DropArtifacts(Policy):
+        name = "drop_artifacts_fixture"
+
+        def apply(
+            self, envelope: HandoffEnvelope, context: PolicyContext
+        ) -> HandoffEnvelope:
+            return envelope.model_copy(update={"artifacts": []}, deep=True)
+
+    with pytest.raises(ContractError) as captured:
+        compile_handoff(
+            HandoffEnvelope(
+                sender="researcher",
+                receiver="coder",
+                artifacts=[
+                    Artifact(name="private-file-name", content="private-content")
+                ],
+            ),
+            ReceiverContract(goal="Implement", required=("artifacts",), max_tokens=500),
+            pipeline=HandoffPipeline([DropArtifacts()]),
+        )
+    error = captured.value
+    assert error.report is not None and error.report.status == "denied"
+    assert error.diagnostics is not None
+    assert error.diagnostics.stage == "pipeline_output"
+    assert error.diagnostics.section_counts["artifacts"] == 0
+    assert "processing policy" in error.diagnostics.recovery_hints["artifacts"]
+    assert error.diagnostics.unclassified_message_indices is None
+    assert "private-" not in error.diagnostics.model_dump_json()
 
 
 def test_required_context_is_never_trimmed_to_meet_budget() -> None:

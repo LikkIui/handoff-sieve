@@ -36,6 +36,7 @@ class NormalizationReport(BaseModel):
     classified_messages: int = Field(ge=0)
     normalized_messages: int = Field(ge=0)
     unclassified_messages: int = Field(ge=0)
+    unclassified_message_indices: tuple[int, ...] | None = None
     rule_counts: dict[str, int] = Field(default_factory=dict)
 
 
@@ -165,6 +166,7 @@ class RuleBasedHistoryNormalizer:
         rule_counts: Counter[str] = Counter()
         classified = 0
         normalized = 0
+        unclassified_indices: list[int] = []
 
         for item_number, message in enumerate(source.messages):
             text_sections = _split_text_sections(message)
@@ -191,6 +193,8 @@ class RuleBasedHistoryNormalizer:
                     copied.kind = section
                     if cleaned_content is not None:
                         copied.content = cleaned_content
+            else:
+                unclassified_indices.append(item_number)
             normalized_messages.append(copied)
 
         output = source.model_copy(deep=True)
@@ -200,6 +204,7 @@ class RuleBasedHistoryNormalizer:
             classified_messages=classified,
             normalized_messages=normalized,
             unclassified_messages=len(source.messages) - classified,
+            unclassified_message_indices=tuple(unclassified_indices),
             rule_counts=dict(sorted(rule_counts.items())),
         )
         return NormalizedHistory(envelope=output, report=report)
@@ -272,12 +277,24 @@ def compile_history(
     source = HandoffEnvelope.model_validate(envelope.model_dump(mode="python"))
     active_pipeline = pipeline or HandoffPipeline()
     normalized = (normalizer or RuleBasedHistoryNormalizer()).normalize(source)
-    compilation = compile_handoff(
-        normalized.envelope,
-        contract,
-        pipeline=active_pipeline,
-        request_id=request_id,
-    )
+    try:
+        compilation = compile_handoff(
+            normalized.envelope,
+            contract,
+            pipeline=active_pipeline,
+            request_id=request_id,
+        )
+    except ContractError as error:
+        error.normalization = normalized.report
+        if error.diagnostics is not None and error.diagnostics.stage == "sender_state":
+            error.diagnostics = error.diagnostics.model_copy(
+                update={
+                    "unclassified_message_indices": (
+                        normalized.report.unclassified_message_indices
+                    )
+                }
+            )
+        raise
     compilation.report.add_event(
         "history_normalizer",
         "classified",

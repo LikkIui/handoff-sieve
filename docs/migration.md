@@ -1,8 +1,24 @@
 # Alpha migration notes
 
-`0.3.0a1` is the first planned public prerelease. There is no previously
-published HandoffSieve API to support, but users of the earlier copied
-RelayGuard prototype should review these changes before replacing it.
+`0.3.0a1` is the first public prerelease. Users of the earlier copied RelayGuard
+prototype should review these changes before replacing it.
+
+## Unreleased `0.3.0a2.dev0`
+
+- `ContractError` adds optional `diagnostics` and `normalization` attributes.
+  Missing-state errors keep their original message prefix and append readable
+  hints. Inspect structured fields instead of matching the complete text.
+- `ContractDiagnostics.stage` distinguishes incomplete `sender_state` from
+  required state removed by a processing policy (`pipeline_output`). Counts
+  describe that stage; diagnostics contain no source message content.
+- `NormalizationReport.unclassified_message_indices` contains zero-based
+  positions in the original envelope, before multi-section expansion. An
+  empty tuple means none; `None` means no origin mapping is available. Custom
+  normalizers can leave this new field unset. SDK positions refer to mapped
+  task state, not raw SDK control items.
+- Ambiguous classifications and other contract errors may have no diagnostics.
+  `normalization` is attached only after normalization successfully completes;
+  the existing optional audit `report` keeps its original meaning.
 
 ## Pipeline and configuration
 

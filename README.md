@@ -113,8 +113,8 @@ The demos above are in the GitHub checkout. For development, run
 `python -m pip install -e ".[dev]"` followed by `python -m pytest` there.
 Tests and offline demos do not require credentials.
 
-The checkout is now `0.3.0a2.dev0`. The live SDK contract filter below is new
-on `main` and is not included in the existing `0.3.0a1` release wheel.
+The checkout is now `0.3.0a2.dev0`. The live SDK contract filter and missing-state
+diagnostics are new on `main` and are not in the existing `0.3.0a1` release wheel.
 
 Token counts use an explicitly labelled UTF-8 estimate by default. Optional
 model-aware text counting is available with the `tiktoken` extra and
@@ -168,6 +168,18 @@ prose. Unclassified conversation is omitted, and the result includes a
 An explicitly headed note can contain several sections on separate lines;
 continuation lines stay with their heading, and labels inside fenced code do
 not start new sections. Report message counts refer to the original input.
+
+When required state is missing, `ContractError.diagnostics` lists missing
+sections, available section counts, unclassified input positions, and ways to
+supply or label the actual state. `error.normalization` retains the completed
+normalization report. Positions start at zero in the original envelope; they
+are candidates to inspect, not guesses about which notes the receiver needs.
+If a processing policy removed necessary state, the error points to that
+policy stage instead. Try the correction flow without a model call:
+
+```bash
+python examples/missing_state/demo.py
+```
 
 Applications that already classify state can use the stricter
 `compile_handoff()` API with an exact plural `Message.kind` or tag such as

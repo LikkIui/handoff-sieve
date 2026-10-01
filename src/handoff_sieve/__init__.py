@@ -2,6 +2,7 @@
 
 from handoff_sieve._version import __version__
 from handoff_sieve.compiler import (
+    ContractDiagnostics,
     HandoffCompilation,
     HandoffPacket,
     ReceiverContract,
@@ -46,6 +47,7 @@ __all__ = [
     "BudgetExceededError",
     "CallbackReporter",
     "ContractError",
+    "ContractDiagnostics",
     "HandoffCompilation",
     "HandoffEnvelope",
     "HandoffIntegrityError",

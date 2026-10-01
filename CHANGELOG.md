@@ -12,6 +12,11 @@ files remain unchanged.
 
 ### Added
 
+- Structured missing-state diagnostics with section counts, original
+  unclassified message positions, and correction hints. Errors distinguish
+  incomplete sender state from state removed by processing policies.
+- An offline correction demo and a real SDK recovery check: missing pending
+  work stops the receiver, and restoring it completes all six behavior checks.
 - `OpenAIReceiverContractFilter` and `compile_openai_handoff()` for compiling
   the latest SDK history at the handoff, including runtime decisions and
   completed function-tool results.

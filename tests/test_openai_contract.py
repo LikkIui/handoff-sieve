@@ -136,7 +136,7 @@ def test_contract_compilation_rejects_incomplete_tool_history(history) -> None:
 
 def test_contract_failures_are_not_silently_replaced_by_full_history() -> None:
     data = snapshot("Decision: Use signed sessions.")
-    with pytest.raises(ContractError, match="pending_work"):
+    with pytest.raises(ContractError, match="pending_work") as captured:
         compile_openai_handoff(
             data,
             ReceiverContract(
@@ -145,6 +145,10 @@ def test_contract_failures_are_not_silently_replaced_by_full_history() -> None:
             sender="researcher",
             receiver="coder",
         )
+    assert captured.value.diagnostics is not None
+    assert captured.value.diagnostics.missing_sections == ("pending_work",)
+    assert captured.value.normalization is not None
+    assert captured.value.normalization.unclassified_message_indices == ()
     with pytest.raises(BudgetExceededError):
         compile_openai_handoff(
             data,

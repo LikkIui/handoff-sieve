@@ -132,3 +132,40 @@ def test_sdk_http_payload_contains_only_the_selected_packet(monkeypatch) -> None
     ]
     assert sizes[1] < sizes[0]
     print(f"Local serialized HTTP bodies: {sizes[0]} -> {sizes[1]} bytes")
+
+
+def test_sdk_missing_state_blocks_receiver_and_resumes_after_correction(
+    monkeypatch,
+) -> None:
+    import asyncio
+
+    from handoff_sieve import ContractError
+
+    spec = importlib.util.spec_from_file_location("sdk_recovery_example", EXAMPLE)
+    assert spec is not None and spec.loader is not None
+    example = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(example)
+    receiver_inputs = []
+
+    class ObservedCoder(example.OfflineCoder):
+        async def get_response(self, **kwargs):
+            receiver_inputs.append(kwargs["input"])
+            return await super().get_response(**kwargs)
+
+    monkeypatch.setattr(example, "OfflineCoder", ObservedCoder)
+    complete_note = example.RUNTIME_NOTE
+    monkeypatch.setattr(example, "RUNTIME_NOTE", complete_note.split("\nTODO:")[0])
+    with pytest.raises(ContractError) as captured:
+        asyncio.run(example.run_workflow())
+    error = captured.value
+    assert error.diagnostics is not None and error.normalization is not None
+    assert error.diagnostics.missing_sections == ("pending_work",)
+    assert error.diagnostics.section_counts["decisions"] == 1
+    assert error.diagnostics.unclassified_message_indices == (0,)
+    assert not receiver_inputs
+
+    monkeypatch.setattr(example, "RUNTIME_NOTE", complete_note)
+    record = asyncio.run(example.run_workflow())
+    assert len(receiver_inputs) == 1
+    assert record["acceptance"] == {"passed": 6, "total": 6}
+    assert record["provider_calls"] == 0

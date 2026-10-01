@@ -8,6 +8,8 @@ from handoff_sieve import (
     ContractError,
     HandoffEnvelope,
     Message,
+    NormalizationReport,
+    NormalizedHistory,
     ReceiverContract,
     RuleBasedHistoryNormalizer,
     compile_history,
@@ -244,3 +246,69 @@ def test_multisection_split_does_not_discard_unlabelled_preamble() -> None:
     )
     assert len(normalized.envelope.messages) == 1
     assert normalized.report.unclassified_messages == 1
+
+
+def test_missing_state_diagnostics_use_original_indices_after_section_expansion() -> (
+    None
+):
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[
+            Message(content="Constraint: Preserve the API.\nDecision: Use cursors."),
+            Message(content="Implement the cursor parser."),
+            Message(content="private launch note"),
+        ],
+    )
+    before = source.model_dump_json()
+    contract = ReceiverContract(
+        goal="Implement pagination",
+        required=("constraints", "decisions", "pending_work"),
+        max_tokens=800,
+    )
+    with pytest.raises(ContractError) as captured:
+        compile_history(source, contract)
+    error = captured.value
+    assert error.diagnostics is not None and error.normalization is not None
+    assert error.diagnostics.missing_sections == ("pending_work",)
+    assert error.diagnostics.section_counts["constraints"] == 1
+    assert error.diagnostics.section_counts["decisions"] == 1
+    assert error.diagnostics.unclassified_message_indices == (1, 2)
+    assert error.normalization.unclassified_message_indices == (1, 2)
+    assert "0-based): 1, 2" in str(error)
+    assert "private launch note" not in error.diagnostics.model_dump_json()
+    assert "Implement the cursor parser" not in str(error)
+    assert source.model_dump_json() == before
+
+    corrected = source.model_copy(deep=True)
+    corrected.messages[1].kind = "pending_work"
+    resumed = compile_history(corrected, contract)
+    assert resumed.packet.pending_work[0].content == "Implement the cursor parser."
+    assert resumed.normalization.unclassified_message_indices == (2,)
+    assert "private launch note" not in resumed.packet.to_receiver_text()
+
+
+def test_custom_normalizer_without_origin_mapping_does_not_guess_indices() -> None:
+    class CustomNormalizer:
+        def normalize(self, envelope: HandoffEnvelope) -> NormalizedHistory:
+            return NormalizedHistory(
+                envelope=envelope.model_copy(deep=True),
+                report=NormalizationReport(
+                    total_messages=1,
+                    classified_messages=0,
+                    normalized_messages=0,
+                    unclassified_messages=1,
+                ),
+            )
+
+    with pytest.raises(ContractError) as captured:
+        compile_history(
+            HandoffEnvelope(
+                sender="researcher", receiver="coder", messages=[Message(content="X")]
+            ),
+            ReceiverContract(goal="Implement", required=("decisions",), max_tokens=500),
+            normalizer=CustomNormalizer(),
+        )
+    assert captured.value.diagnostics is not None
+    assert captured.value.diagnostics.unclassified_message_indices is None
+    assert "Unclassified input message indices" not in str(captured.value)

@@ -48,6 +48,84 @@ _MESSAGE_SECTION_SET = frozenset(MESSAGE_SECTION_NAMES)
 _SECTION_INTERNAL_KEY = "handoff_sieve.receiver_section"
 
 
+class ContractDiagnostics(BaseModel):
+    """Inspect missing receiver state without copying source content.
+
+    Indices refer to the envelope passed to history normalization, or to the
+    original envelope in the strict compiler. ``None`` means that an origin
+    mapping is unavailable, rather than that there were no unclassified items.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    stage: Literal["sender_state", "pipeline_output"]
+    missing_sections: tuple[SectionName, ...]
+    section_counts: dict[SectionName, int]
+    unclassified_message_indices: tuple[int, ...] | None = None
+    recovery_hints: dict[SectionName, str]
+
+    def to_text(self) -> str:
+        available = (
+            ", ".join(
+                f"{section}={count}"
+                for section, count in self.section_counts.items()
+                if count
+            )
+            or "none"
+        )
+        lines = [f"Available sections ({self.stage}): {available}."]
+        if self.unclassified_message_indices is not None:
+            indices = ", ".join(map(str, self.unclassified_message_indices)) or "none"
+            lines.append(f"Unclassified input message indices (0-based): {indices}.")
+        lines.extend(
+            f"{section}: {hint}" for section, hint in self.recovery_hints.items()
+        )
+        return "\n".join(lines)
+
+
+_SECTION_HEADINGS: dict[SectionName, str] = {
+    "constraints": "Constraint:",
+    "decisions": "Decision:",
+    "evidence": "Evidence:",
+    "completed_work": "Completed:",
+    "failed_attempts": "Failed attempt:",
+    "pending_work": "TODO:",
+    "tool_results": "Tool result:",
+    "artifacts": "",
+}
+
+
+def _missing_state_diagnostics(
+    missing: list[SectionName],
+    section_counts: dict[SectionName, int],
+    *,
+    stage: Literal["sender_state", "pipeline_output"],
+    unclassified_indices: tuple[int, ...] | None = None,
+) -> ContractDiagnostics:
+    hints: dict[SectionName, str] = {}
+    for section in missing:
+        if stage == "pipeline_output":
+            hints[section] = (
+                "Inspect the processing policy that removed this required section; "
+                "it was present before the pipeline ran."
+            )
+        elif section == "artifacts":
+            hints[section] = "Add actual files or outputs to HandoffEnvelope.artifacts."
+        else:
+            hints[section] = (
+                f"Supply actual {section} state as Message(kind='{section}', ...). "
+                f"For compile_history, '{_SECTION_HEADINGS[section]}' also labels it. "
+                "Label only relevant state; do not reclassify unrelated notes."
+            )
+    return ContractDiagnostics(
+        stage=stage,
+        missing_sections=tuple(missing),
+        section_counts=section_counts,
+        unclassified_message_indices=unclassified_indices,
+        recovery_hints=hints,
+    )
+
+
 class ReceiverContract(BaseModel):
     """The explicit context requirements for one receiving agent.
 
@@ -205,7 +283,15 @@ class _ReceiverContractPolicy(Policy):
         ]
         if missing:
             raise ContractError(
-                "Pipeline removed required receiver section(s): " + ", ".join(missing)
+                "Pipeline removed required receiver section(s): " + ", ".join(missing),
+                diagnostics=_missing_state_diagnostics(
+                    missing,
+                    {
+                        section: len(getattr(processed, section))
+                        for section in SECTION_NAMES
+                    },
+                    stage="pipeline_output",
+                ),
             )
 
         packet, kept_positions = _fit_processed_packet(
@@ -279,11 +365,31 @@ def compile_handoff(
         if not _section_has_items(section, by_section, source.artifacts)
     ]
     if missing:
+        classified_ids = {
+            id(message) for messages in by_section.values() for message in messages
+        }
         raise ContractError(
             "Required receiver section(s) missing from sender state: "
             + ", ".join(missing)
             + ". Add an exact section name to Message.kind/tags, or provide "
-            "HandoffEnvelope.artifacts for the artifacts section."
+            "HandoffEnvelope.artifacts for the artifacts section.",
+            diagnostics=_missing_state_diagnostics(
+                missing,
+                {
+                    section: (
+                        len(source.artifacts)
+                        if section == "artifacts"
+                        else len(by_section[section])
+                    )
+                    for section in SECTION_NAMES
+                },
+                stage="sender_state",
+                unclassified_indices=tuple(
+                    index
+                    for index, message in enumerate(source.messages)
+                    if id(message) not in classified_ids
+                ),
+            ),
         )
 
     selected_messages: list[Message] = []

@@ -49,6 +49,13 @@ fenced code are kept as text. Explicit kinds and tags still take precedence,
 and conflicting metadata remains an error. The normalizer report counts input
 messages, even when one message yields several section items.
 
+Missing required state raises `ContractError` before the receiver is called.
+Inspect `error.diagnostics` for missing sections, counts, and correction hints;
+`error.normalization` records the completed local classification. Unclassified
+positions refer to the mapped `HandoffEnvelope`, not raw SDK item positions:
+routing items are omitted and completed tool pairs are combined. Correct the
+source state explicitly and retry; the filter never invents missing facts.
+
 See the [runnable SDK takeover example](../examples/openai_takeover/README.md).
 
 ## Send an already compiled receiver view
