@@ -151,3 +151,96 @@ def test_missing_required_section_still_fails_closed_after_normalization() -> No
                 max_tokens=500,
             ),
         )
+
+
+def test_multisection_note_preserves_continuations_and_ignores_code_labels() -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[
+            Message(
+                content=(
+                    "Constraint: Keep the public API stable.\n"
+                    "Including all keyword argument names.\n"
+                    "Decision: Reject invalid hashes first.\n"
+                    "```python\nTODO: this is quoted example code\n```\n"
+                    "Failed attempt: Checking expiry before reuse hid reuse.\n"
+                    "待办：Implement the middleware."
+                )
+            )
+        ],
+    )
+    before = source.model_dump_json()
+    result = compile_history(
+        source,
+        ReceiverContract(
+            goal="Implement authentication",
+            required=("constraints", "decisions", "failed_attempts", "pending_work"),
+            max_tokens=1_000,
+        ),
+    )
+    assert result.packet.constraints[0].content == (
+        "Keep the public API stable.\nIncluding all keyword argument names."
+    )
+    assert "quoted example code" in result.packet.decisions[0].content
+    assert result.packet.pending_work[0].content == "Implement the middleware."
+    assert result.packet.failed_attempts[0].content == (
+        "Checking expiry before reuse hid reuse."
+    )
+    assert result.normalization.total_messages == 1
+    assert result.normalization.normalized_messages == 1
+    assert result.normalization.rule_counts == {"text_prefix_sections": 1}
+    assert result.source_tokens == ApproxTokenCounter().count_envelope(source)
+    assert source.model_dump_json() == before
+
+
+@pytest.mark.parametrize(
+    "hint",
+    [
+        {"kind": "evidence"},
+        {"tags": {"evidence"}},
+    ],
+)
+def test_multisection_text_keeps_explicit_classification(hint: dict) -> None:
+    text = "Decision: quoted choice\nTODO: quoted task"
+    result = compile_history(
+        HandoffEnvelope(
+            sender="researcher",
+            receiver="reviewer",
+            messages=[Message(content=text, **hint)],
+        ),
+        ReceiverContract(
+            goal="Review evidence", required=("evidence",), max_tokens=500
+        ),
+    )
+    assert result.packet.evidence[0].content == text
+    assert not result.packet.decisions and not result.packet.pending_work
+
+
+def test_multisection_text_does_not_override_conflicting_metadata() -> None:
+    with pytest.raises(ContractError, match="conflicting normalization signals"):
+        compile_history(
+            HandoffEnvelope(
+                sender="researcher",
+                receiver="reviewer",
+                messages=[
+                    Message(
+                        content="Decision: quoted choice\nTODO: quoted task",
+                        metadata={"handoff_section": "evidence"},
+                    )
+                ],
+            ),
+            ReceiverContract(goal="Review", required=("evidence",), max_tokens=500),
+        )
+
+
+def test_multisection_split_does_not_discard_unlabelled_preamble() -> None:
+    normalized = RuleBasedHistoryNormalizer().normalize(
+        HandoffEnvelope(
+            sender="researcher",
+            receiver="coder",
+            messages=[Message(content="An unlabelled note.\nDecision: X\nTODO: Y")],
+        )
+    )
+    assert len(normalized.envelope.messages) == 1
+    assert normalized.report.unclassified_messages == 1

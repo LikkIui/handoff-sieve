@@ -167,6 +167,17 @@ class RuleBasedHistoryNormalizer:
         normalized = 0
 
         for item_number, message in enumerate(source.messages):
+            text_sections = _split_text_sections(message)
+            if text_sections is not None:
+                classified += 1
+                normalized += 1
+                rule_counts["text_prefix_sections"] += 1
+                for text_section, content in text_sections:
+                    copied = message.model_copy(deep=True)
+                    copied.kind = text_section
+                    copied.content = content
+                    normalized_messages.append(copied)
+                continue
             section, rule, cleaned_content = self._classify(
                 message,
                 item_number=item_number,
@@ -338,3 +349,49 @@ def _section_from_text(
         return None, None
     label = match.group("label").casefold()
     return _TEXT_LABELS[label], match.group("body").strip()
+
+
+def _split_text_sections(message: Message) -> list[tuple[SectionName, str]] | None:
+    """Split an explicitly headed, multi-section note; keep continuation lines.
+
+    Existing kinds, tags, metadata hints, and tool semantics take precedence.
+    Labels inside fenced code do not start a new section. A leading unlabelled
+    paragraph is not interpreted as a section or silently dropped.
+    """
+
+    if (
+        not isinstance(message.content, str)
+        or _explicit_sections(message)
+        or any(key in message.metadata for key in _METADATA_KEYS)
+        or message.role.casefold() == "tool"
+        or message.kind.casefold() in _TOOL_KINDS
+    ):
+        return None
+    lines = message.content.strip().splitlines()
+    if not lines or _TEXT_PREFIX.match(lines[0]) is None:
+        return None
+    sections: list[tuple[SectionName, str]] = []
+    current_section: SectionName | None = None
+    body: list[str] = []
+    fence: str | None = None
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith(("```", "~~~")):
+            marker = stripped[:3]
+            if fence is None:
+                fence = marker
+            elif fence == marker:
+                fence = None
+            body.append(line)
+            continue
+        match = _TEXT_PREFIX.match(line) if fence is None else None
+        if match is not None:
+            if current_section is not None:
+                sections.append((current_section, "\n".join(body).strip()))
+            current_section = _TEXT_LABELS[match.group("label").casefold()]
+            body = [match.group("body")]
+        else:
+            body.append(line)
+    if current_section is not None:
+        sections.append((current_section, "\n".join(body).strip()))
+    return sections if len(sections) > 1 else None

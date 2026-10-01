@@ -7,8 +7,19 @@ changelog and migration notes explain them.
 
 ## [Unreleased]
 
+Current development version: `0.3.0a2.dev0`. The published `0.3.0a1` release
+files remain unchanged.
+
 ### Added
 
+- `OpenAIReceiverContractFilter` and `compile_openai_handoff()` for compiling
+  the latest SDK history at the handoff, including runtime decisions and
+  completed function-tool results.
+- A real SDK tool/handoff takeover example with offline fixture models,
+  explicit live-coder mode, six behavior checks, and a saved one-task live
+  checkpoint. Gateway-reported usage anomalies are retained and disclosed.
+- A local HTTP-transport check proving that SDK request serialization contains
+  only the selected packet and no hidden full-history continuation.
 - An offline demo that compiles the same sender history into distinct coder
   and reviewer packets, with assertions for shared critical state and budgets.
 - Installed-wheel CI coverage for the two-receiver demo.
@@ -18,6 +29,8 @@ changelog and migration notes explain them.
 
 ### Changed
 
+- Local normalization splits explicitly headed multi-section messages while
+  preserving continuation lines, fenced code, and existing classification.
 - Shortened the README around complete clone/install/run instructions, the
   receiver-specific demo, and the existing real-task result; moved detailed
   cleanup-policy reference into `docs/policy-pipeline.md`.

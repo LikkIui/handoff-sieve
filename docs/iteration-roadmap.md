@@ -2,7 +2,7 @@
 
 > 状态：当前产品路线
 > 更新日期：2026-10-01
-> 当前代码版本：`0.3.0a1`，GitHub 预发布已公开，PyPI 暂缓
+> 当前代码版本：`0.3.0a2.dev0`；GitHub `0.3.0a1` 已公开，PyPI 暂缓
 > 本文负责产品迭代方向；`project-plan.md` 继续保留接管记录、已完成工作和工程证据。
 
 ## 产品一句话
@@ -298,14 +298,22 @@ SDK 版本、两个 LangGraph 版本及打包检查组成的 10 项云端 CI 已
 PyPI 上传按用户要求暂缓，待邮箱和账号设置恢复后再进行。已准备的发布流程保留在
 [PyPI 发布说明](pypi-publishing.md)，不阻塞从 GitHub 安装和使用。
 
-当前推进首次使用体验：补充同一份 sender history 面向 coder / reviewer 的双接收方
-demo，直接展示不同 `ReceiverContract` 产生不同视图，同时保留共同的关键状态；README
-提供完整 clone / install / run 路径，并把详细策略参考移到文档。示例应同时通过离线
-断言和已发布 wheel 的包外运行，不借此扩大产品功能或追加模型调用。
+首次使用体验已完成：同源 coder / reviewer demo、完整 clone / install / run 路径和
+精简 README 均已从公开仓库与干净环境复核。
 
-完成后优先接入一个实际 OpenAI Agents SDK 或 LangGraph 工作流，检查真实交接时如何
-建立 contract、识别遗漏并保留任务必要状态。先复现具体使用问题，再决定核心优化；
-继续沿用已有任务的验收方式，不新建大型 benchmark，也不扩展更多框架。
+当前开发版增加实际 OpenAI SDK 工具调用 → researcher 运行时决定 → coder 交接流程。
+`OpenAIReceiverContractFilter` 在交接当下编译最新历史，修复预编译示例无法自动纳入
+新增状态的接入缺口；本地归一化能拆分同一条消息中的多个明确标题，保留延续文本和
+代码块。离线流程及两次 `gpt-5.6-sol` 真实 coder 调用均通过 6/6 验收。
+
+本次合成任务映射状态为 2,387 estimated token，packet 为 322，SDK 接收输入从 7 项
+减少到 1 项。本地模拟 HTTP 传输也验证了实际 SDK 序列化不夹带原历史或远程 continuation。
+但兼容网关返回的 input token 为 Full History 3,867 / HandoffSieve 13,960，原因尚未确认；
+原始数字保留，不把这次检查宣传为 provider 账单节省。记录见 SDK example 的 checkpoint。
+
+下一步先改善关键状态遗漏的定位体验：用实际交接历史复现未分类内容和缺失 section，
+让调用方清楚需要补充什么状态。网关 usage 与客户端输入之间的异常关系保留为待核对项；
+在确认前不追加模型试验追逐更好数字，不扩 adapter，也不新建大型 benchmark。
 
 ## 最高优先级停止条件
 

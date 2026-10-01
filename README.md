@@ -113,6 +113,9 @@ The demos above are in the GitHub checkout. For development, run
 `python -m pip install -e ".[dev]"` followed by `python -m pytest` there.
 Tests and offline demos do not require credentials.
 
+The checkout is now `0.3.0a2.dev0`. The live SDK contract filter below is new
+on `main` and is not included in the existing `0.3.0a1` release wheel.
+
 Token counts use an explicitly labelled UTF-8 estimate by default. Optional
 model-aware text counting is available with the `tiktoken` extra and
 `TiktokenCounter`; provider message-wrapper overhead remains an estimate.
@@ -162,6 +165,9 @@ Chinese equivalents, common structured keys, tool messages, and dedicated
 metadata hints. It does not call a model or guess from words in the middle of
 prose. Unclassified conversation is omitted, and the result includes a
 `NormalizationReport` showing how many messages each rule classified.
+An explicitly headed note can contain several sections on separate lines;
+continuation lines stay with their heading, and labels inside fenced code do
+not start new sections. Report message counts refer to the original input.
 
 Applications that already classify state can use the stricter
 `compile_handoff()` API with an exact plural `Message.kind` or tag such as
@@ -198,27 +204,42 @@ Install the optional dependency:
 python -m pip install -e ".[openai]"
 ```
 
-Send the compiled receiver view directly to the next agent:
+Compile the latest runtime history at the actual handoff:
 
 ```python
 from agents import handoff
-from handoff_sieve import compile_history
-from handoff_sieve.adapters import OpenAIHandoffPacketFilter
+from handoff_sieve.adapters import OpenAIReceiverContractFilter
 
-compilation = compile_history(sender_state, contract)
 coder_handoff = handoff(
     agent=coder,
-    input_filter=OpenAIHandoffPacketFilter(compilation.packet),
+    input_filter=OpenAIReceiverContractFilter(
+        contract,
+        sender="researcher",
+        receiver="coder",
+    ),
 )
 ```
 
-The receiver sees one canonical JSON item containing the goal and every packet
-section, including artifacts and tool results. HandoffSieve counts this exact
-text when enforcing `ReceiverContract.max_tokens`; the original runtime history
-does not enter the receiving model's view.
+The filter includes decisions made during the run and completed function-tool
+results, then sends one canonical packet item. HandoffSieve counts this exact
+text against `ReceiverContract.max_tokens`. Original SDK session items and
+local run context stay intact. Missing required sections or an excessive budget
+raise an error; they never trigger an implicit full-history fallback.
+
+Run the real SDK tool / handoff loop with offline fixture models:
+
+```bash
+python examples/openai_takeover/run.py
+```
+
+The demo preserves the latest decision and rejected approach, then generates
+a module that passes 6/6 behavior checks. Its [guide and live checkpoint](examples/openai_takeover/README.md)
+also show one-task live coder verification. That gateway returned anomalous
+token usage, so the SDK checkpoint makes no provider-cost savings claim.
 
 See the [OpenAI adapter guide](docs/openai-adapter.md) for the lower-level
-policy filter and tool-pair handling. The supported SDK window is `0.22.x`;
+policy filter, precompiled packets, and tool-pair handling. The supported SDK
+window is `0.22.x`;
 filters work with client-managed conversation history.
 
 ## LangGraph
@@ -304,7 +325,7 @@ evidence for the product's downstream-success claim.
 | Audited failure cases | 5/5 |
 | Audit completeness | 100.0% |
 | Estimated tokens | 903 original → 556 transmitted; 283 summarizer; 64 net saved |
-| Pipeline latency | p50 4.400 ms; p95 5.727 ms on the generating machine |
+| Pipeline latency | p50 2.451 ms; p95 4.279 ms on the generating machine |
 <!-- benchmark-results:end -->
 
 </details>

@@ -4,7 +4,54 @@
 0.22.3. The package constrains compatibility to the 0.22.x line until a later
 minor passes the integration suite.
 
-## Send a compiled receiver view
+## Compile the current SDK history at handoff
+
+The `0.3.0a2.dev0` checkout adds `OpenAIReceiverContractFilter`. Install the
+checkout with `python -m pip install -e ".[openai]"`; this API is not in the
+published `0.3.0a1` wheel.
+
+```python
+from agents import handoff
+from handoff_sieve.adapters import OpenAIReceiverContractFilter
+
+coder_handoff = handoff(
+    agent=coder,
+    input_filter=OpenAIReceiverContractFilter(
+        receiver_contract,
+        sender="researcher",
+        receiver="coder",
+    ),
+)
+```
+
+Each invocation compiles that handoff's `input_history`, `pre_handoff_items`,
+and `input_items` (or `new_items` when no replacement exists). Completed
+function calls and outputs become one structured tool result with the call
+ID, name, arguments, and output. Orphaned, duplicate, reused, or unfinished
+calls raise `HandoffIntegrityError`.
+
+The current SDK routing events and reasoning items are omitted from task
+state. Text strings and input/output text blocks are supported. Images, audio,
+other tool types, and server-managed state require an application-specific
+mapper instead of being silently discarded. Local `run_context` is preserved
+by identity and is never included in the packet.
+
+Pass `artifacts=` for explicit application files or outputs, `pipeline=` for
+optional cleanup, and `on_compile=` for a callback that receives the packet
+and normalization report. `compile_openai_handoff(data, contract, sender=...,
+receiver=...)` is also available for applications that own their filter logic.
+The callback receives a fresh compilation per call; there is no shared latest
+result that can leak between concurrent runs. A callback exception propagates.
+
+One explicitly headed runtime message can contain several sections. Lines
+after a heading stay with that section until the next heading; headings inside
+fenced code are kept as text. Explicit kinds and tags still take precedence,
+and conflicting metadata remains an error. The normalizer report counts input
+messages, even when one message yields several section items.
+
+See the [runnable SDK takeover example](../examples/openai_takeover/README.md).
+
+## Send an already compiled receiver view
 
 Compile the sender state first, then use `OpenAIHandoffPacketFilter` as the
 handoff input filter:
