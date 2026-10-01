@@ -42,6 +42,9 @@ and normalization report. `compile_openai_handoff(data, contract, sender=...,
 receiver=...)` is also available for applications that own their filter logic.
 The callback receives a fresh compilation per call; there is no shared latest
 result that can leak between concurrent runs. A callback exception propagates.
+The compilation's `budget` explains required size and preferred budget
+omissions. It is available to `on_compile` and stays out of model-visible JSON.
+Receiver-budget errors expose the same report as `BudgetExceededError.budget`.
 
 One explicitly headed runtime message can contain several sections. Lines
 after a heading stay with that section until the next heading; headings inside

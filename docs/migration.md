@@ -5,6 +5,16 @@ prototype should review these changes before replacing it.
 
 ## Unreleased `0.3.0a2.dev0`
 
+- Compilation results add optional `budget: BudgetReport`. Compiler-generated
+  results populate it; callers constructing results directly can omit it.
+  Receiver-budget overflow errors add optional `BudgetExceededError.budget`;
+  ordinary pipeline budget errors can leave it unset. Existing `report` semantics
+  and error message prefixes are preserved.
+- `required_tokens` includes the goal and canonical packet overhead at `stage`.
+  `packet_tokens=None` means no receiver packet was emitted. Preferred omissions
+  record budget decisions before and after processing; absent, unrequested, and
+  policy-removed items are not counted as budget omissions. These local estimates
+  are separate from provider-reported usage and are never added to packet JSON.
 - `ContractError` adds optional `diagnostics` and `normalization` attributes.
   Missing-state errors keep their original message prefix and append readable
   hints. Inspect structured fields instead of matching the complete text.

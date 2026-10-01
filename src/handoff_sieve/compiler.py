@@ -172,6 +172,85 @@ class ReceiverContract(BaseModel):
         return self
 
 
+class BudgetReport(BaseModel):
+    """Explain actual budget decisions without including sender content.
+
+    ``required_tokens`` includes the goal and canonical packet overhead at
+    ``stage``. Omission counts record the two separate selection passes; they
+    do not include absent, unrequested, or policy-removed content.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    stage: Literal["sender_state", "pipeline_output"]
+    token_counter: str
+    max_tokens: int = Field(gt=0)
+    required_tokens: int = Field(ge=0)
+    packet_tokens: int | None = Field(default=None, ge=0)
+    preferred_selected: dict[SectionName, int] = Field(default_factory=dict)
+    preferred_omitted_before_pipeline: dict[SectionName, int] = Field(
+        default_factory=dict
+    )
+    preferred_omitted_after_pipeline: dict[SectionName, int] = Field(
+        default_factory=dict
+    )
+
+    @property
+    def remaining_tokens(self) -> int:
+        used = (
+            self.packet_tokens
+            if self.packet_tokens is not None
+            else self.required_tokens
+        )
+        return max(0, self.max_tokens - used)
+
+    @property
+    def overflow_tokens(self) -> int:
+        return max(0, self.required_tokens - self.max_tokens)
+
+    @property
+    def preferred_omitted_for_budget(self) -> dict[SectionName, int]:
+        before = self.preferred_omitted_before_pipeline
+        after = self.preferred_omitted_after_pipeline
+        return {
+            section: before.get(section, 0) + after.get(section, 0)
+            for section in dict.fromkeys((*before, *after))
+        }
+
+    def to_text(self) -> str:
+        lines = [
+            f"Required context ({self.stage}): {self.required_tokens} estimated tokens "
+            "including goal and packet overhead.",
+            f"Contract budget: {self.max_tokens} tokens; "
+            f"counter: {self.token_counter}.",
+        ]
+        if self.packet_tokens is None:
+            lines.append(
+                f"No packet emitted; budget shortfall: {self.overflow_tokens} tokens."
+            )
+        else:
+            lines.append(
+                f"Final packet: {self.packet_tokens} estimated tokens; "
+                f"remaining: {self.remaining_tokens}."
+            )
+        for label, counts in (
+            ("Preferred items kept", self.preferred_selected),
+            (
+                "Omitted for budget before processing",
+                self.preferred_omitted_before_pipeline,
+            ),
+            (
+                "Omitted for budget after processing",
+                self.preferred_omitted_after_pipeline,
+            ),
+        ):
+            summary = ", ".join(
+                f"{section}={count}" for section, count in counts.items() if count
+            )
+            lines.append(f"{label}: {summary or 'none'}.")
+        return "\n".join(lines)
+
+
 class HandoffPacket(BaseModel):
     """A receiver-specific, structured task takeover packet."""
 
@@ -246,6 +325,7 @@ class HandoffCompilation(BaseModel):
     source_tokens: int = Field(ge=0)
     packet_tokens: int = Field(ge=0)
     omitted_count: int = Field(ge=0)
+    budget: BudgetReport | None = None
 
     @property
     def estimated_tokens_saved(self) -> int:
@@ -267,8 +347,14 @@ class _ReceiverContractPolicy(Policy):
 
     name = "receiver_contract"
 
-    def __init__(self, contract: ReceiverContract) -> None:
+    def __init__(
+        self,
+        contract: ReceiverContract,
+        omitted_before_pipeline: dict[SectionName, int],
+    ) -> None:
         self.contract = contract
+        self.omitted_before_pipeline = omitted_before_pipeline
+        self.budget: BudgetReport | None = None
 
     def apply(
         self,
@@ -294,12 +380,14 @@ class _ReceiverContractPolicy(Policy):
                 ),
             )
 
-        packet, kept_positions = _fit_processed_packet(
+        packet, kept_positions, budget = _fit_processed_packet(
             processed,
             self.contract,
             context.token_counter,
             report=context.report,
+            omitted_before_pipeline=self.omitted_before_pipeline,
         )
+        self.budget = budget
         seen_positions: dict[SectionName, int] = {
             section: 0 for section in SECTION_NAMES
         }
@@ -330,7 +418,9 @@ class _ReceiverContractPolicy(Policy):
             count=omitted_messages + omitted_artifacts,
             details={
                 "max_tokens": self.contract.max_tokens,
-                "packet_tokens": _count_packet(packet, context.token_counter),
+                "packet_tokens": budget.packet_tokens,
+                "required_tokens": budget.required_tokens,
+                "preferred_omitted_for_budget": budget.preferred_omitted_for_budget,
             },
         )
         return output
@@ -417,9 +507,18 @@ def compile_handoff(
         raise BudgetExceededError(
             "Required receiver context needs "
             f"{required_tokens} estimated tokens, exceeding the contract "
-            f"budget of {contract.max_tokens}. No required content was removed."
+            f"budget of {contract.max_tokens}. No required content was removed.",
+            budget=BudgetReport(
+                stage="sender_state",
+                token_counter=counter.name,
+                max_tokens=contract.max_tokens,
+                required_tokens=required_tokens,
+            ),
         )
 
+    omitted_before_pipeline: dict[SectionName, int] = {
+        section: 0 for section in contract.preferred
+    }
     for section in contract.preferred:
         if section == "artifacts":
             candidates: list[Message | Artifact] = list(source.artifacts)
@@ -441,6 +540,7 @@ def compile_handoff(
                 candidate_artifacts,
             )
             if _count_packet(candidate_packet, counter) > contract.max_tokens:
+                omitted_before_pipeline[section] += 1
                 continue
             selected_messages = candidate_messages
             selected_artifacts = candidate_artifacts
@@ -467,10 +567,11 @@ def compile_handoff(
         # left out of the minimal receiver view.
         metadata={"goal": contract.goal},
     )
+    contract_policy = _ReceiverContractPolicy(contract, omitted_before_pipeline)
     pipeline_result = active_pipeline._process_trusted_envelope(
         selected_envelope,
         request_id=request_id,
-        final_policies=(_ReceiverContractPolicy(contract),),
+        final_policies=(contract_policy,),
     )
     processed_packet = _packet_from_pipeline_result(pipeline_result.envelope)
     packet = processed_packet
@@ -483,6 +584,7 @@ def compile_handoff(
         source_tokens=source_tokens,
         packet_tokens=packet_tokens,
         omitted_count=max(0, source_item_count - packet.item_count),
+        budget=contract_policy.budget,
     )
 
 
@@ -629,7 +731,8 @@ def _fit_processed_packet(
     counter: TokenCounter,
     *,
     report: AuditReport,
-) -> tuple[HandoffPacket, dict[SectionName, set[int]]]:
+    omitted_before_pipeline: dict[SectionName, int],
+) -> tuple[HandoffPacket, dict[SectionName, set[int]], BudgetReport]:
     packet = HandoffPacket(
         sender=processed.sender,
         receiver=processed.receiver,
@@ -654,8 +757,18 @@ def _fit_processed_packet(
             f"{required_tokens} estimated tokens, exceeding the contract budget "
             f"of {contract.max_tokens}. No required content was removed.",
             report=report,
+            budget=BudgetReport(
+                stage="pipeline_output",
+                token_counter=counter.name,
+                max_tokens=contract.max_tokens,
+                required_tokens=required_tokens,
+                preferred_omitted_before_pipeline=omitted_before_pipeline,
+            ),
         )
 
+    omitted_after_pipeline: dict[SectionName, int] = {
+        section: 0 for section in contract.preferred
+    }
     for section in contract.preferred:
         for position, item in enumerate(getattr(processed, section)):
             candidate = packet.model_copy(deep=True)
@@ -663,7 +776,21 @@ def _fit_processed_packet(
             if _count_packet(candidate, counter) <= contract.max_tokens:
                 packet = candidate
                 kept_positions[section].add(position)
-    return packet, kept_positions
+            else:
+                omitted_after_pipeline[section] += 1
+    budget = BudgetReport(
+        stage="pipeline_output",
+        token_counter=counter.name,
+        max_tokens=contract.max_tokens,
+        required_tokens=required_tokens,
+        packet_tokens=_count_packet(packet, counter),
+        preferred_selected={
+            section: len(getattr(packet, section)) for section in contract.preferred
+        },
+        preferred_omitted_before_pipeline=omitted_before_pipeline,
+        preferred_omitted_after_pipeline=omitted_after_pipeline,
+    )
+    return packet, kept_positions, budget
 
 
 def _count_packet(packet: HandoffPacket, counter: TokenCounter) -> int:

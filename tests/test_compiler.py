@@ -65,6 +65,12 @@ def test_compile_handoff_builds_explicit_receiver_packet() -> None:
     assert result.report.request_id == "takeover-1"
     assert result.report.status == "passed"
     assert result.report.events[-1].policy == "receiver_contract"
+    assert result.budget is not None
+    assert result.budget.packet_tokens == result.packet_tokens
+    assert result.budget.preferred_selected == {
+        section: 1 for section in contract.preferred
+    }
+    assert not any(result.budget.preferred_omitted_for_budget.values())
 
 
 def test_receiver_text_is_canonical_and_matches_packet_token_count() -> None:
@@ -116,6 +122,7 @@ def test_receiver_text_is_canonical_and_matches_packet_token_count() -> None:
     assert "_protected" not in receiver_text
     assert "_internal" not in receiver_text
     assert '"constraints":[]' in receiver_text
+    assert "budget" not in payload
 
 
 def test_required_section_missing_fails_clearly() -> None:
@@ -203,8 +210,19 @@ def test_required_context_is_never_trimmed_to_meet_budget() -> None:
         max_tokens=100,
     )
 
-    with pytest.raises(BudgetExceededError, match="No required content was removed"):
+    with pytest.raises(
+        BudgetExceededError, match="No required content was removed"
+    ) as captured:
         compile_handoff(source, contract)
+    error = captured.value
+    assert error.budget is not None and error.report is None
+    assert error.budget.stage == "sender_state"
+    assert error.budget.packet_tokens is None
+    assert error.budget.required_tokens > contract.max_tokens
+    assert error.budget.overflow_tokens == error.budget.required_tokens - 100
+    assert error.budget.remaining_tokens == 0
+    assert "No packet emitted" in str(error)
+    assert "x" * 2_000 not in error.budget.model_dump_json()
 
 
 def test_preferred_sections_follow_priority_and_fit_remaining_budget() -> None:
@@ -238,6 +256,11 @@ def test_preferred_sections_follow_priority_and_fit_remaining_budget() -> None:
     assert result.packet.evidence == []
     assert result.packet.failed_attempts[0].content == "small useful failure"
     assert result.packet_tokens <= contract.max_tokens
+    assert result.budget is not None
+    assert result.budget.preferred_selected == {"evidence": 0, "failed_attempts": 1}
+    assert result.budget.preferred_omitted_before_pipeline["evidence"] == 1
+    assert result.budget.preferred_omitted_after_pipeline["evidence"] == 0
+    assert result.budget.remaining_tokens == 0
 
 
 def test_later_small_item_is_kept_when_earlier_item_in_same_section_is_too_big() -> (
@@ -282,6 +305,9 @@ def test_later_small_item_is_kept_when_earlier_item_in_same_section_is_too_big()
         "small useful evidence"
     ]
     assert result.packet_tokens <= contract.max_tokens
+    assert result.budget is not None
+    assert result.budget.preferred_selected == {"evidence": 1}
+    assert result.budget.preferred_omitted_for_budget == {"evidence": 1}
 
 
 class ExplodingSummarizer:
@@ -354,6 +380,12 @@ def test_redaction_expansion_denies_inside_pipeline_before_report_emit() -> None
     assert captured.value.report.failure_code == "budget_exceeded"
     assert len(emitted) == 1
     assert emitted[0].status == "denied"
+    assert captured.value.budget is not None
+    assert captured.value.budget.stage == "pipeline_output"
+    assert captured.value.budget.required_tokens == redacted.packet_tokens
+    assert captured.value.budget.overflow_tokens == (
+        redacted.packet_tokens - raw.packet_tokens
+    )
 
 
 def test_pipeline_cleans_goal_without_forwarding_unrequested_source_metadata() -> None:
@@ -413,3 +445,115 @@ def test_contract_rejects_duplicate_or_overlapping_sections() -> None:
             preferred=["decisions"],
             max_tokens=1_000,
         )
+
+
+def test_budget_feedback_tracks_preferred_expansion_after_processing() -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[
+            Message(content="Keep the API.", kind="constraints"),
+            Message(content=" ".join(["a@b.co"] * 30), kind="evidence"),
+            Message(content="A timestamp alone skipped rows.", kind="failed_attempts"),
+        ],
+    )
+    roomy = ReceiverContract(
+        goal="Implement pagination",
+        required=("constraints",),
+        preferred=("evidence", "failed_attempts"),
+        max_tokens=10_000,
+    )
+    original = source.model_dump_json()
+    raw = compile_handoff(source, roomy)
+    result = compile_handoff(
+        source,
+        roomy.model_copy(update={"max_tokens": raw.packet_tokens}),
+        pipeline=HandoffPipeline([RedactPolicy(detectors=["email"])]),
+    )
+    assert result.packet.constraints and result.packet.failed_attempts
+    assert not result.packet.evidence
+    assert result.budget is not None
+    assert result.budget.preferred_omitted_before_pipeline == {
+        "evidence": 0,
+        "failed_attempts": 0,
+    }
+    assert result.budget.preferred_omitted_after_pipeline == {
+        "evidence": 1,
+        "failed_attempts": 0,
+    }
+    assert "a@b.co" not in result.budget.model_dump_json()
+    assert source.model_dump_json() == original
+
+
+def test_absent_or_policy_removed_preferred_state_is_not_a_budget_omission() -> None:
+    from handoff_sieve.policies.base import Policy, PolicyContext
+
+    class DropArtifacts(Policy):
+        name = "drop_optional_artifacts_fixture"
+
+        def apply(
+            self, envelope: HandoffEnvelope, context: PolicyContext
+        ) -> HandoffEnvelope:
+            return envelope.model_copy(update={"artifacts": []}, deep=True)
+
+    result = compile_handoff(
+        HandoffEnvelope(
+            sender="researcher",
+            receiver="coder",
+            messages=[Message(content="Use cursors.", kind="decisions")],
+            artifacts=[Artifact(name="reference.txt", content="optional reference")],
+        ),
+        ReceiverContract(
+            goal="Implement pagination",
+            required=("decisions",),
+            preferred=("artifacts", "evidence"),
+            max_tokens=1_000,
+        ),
+        pipeline=HandoffPipeline([DropArtifacts()]),
+    )
+    assert not result.packet.artifacts and not result.packet.evidence
+    assert result.budget is not None
+    assert result.budget.preferred_selected == {"artifacts": 0, "evidence": 0}
+    assert result.budget.preferred_omitted_for_budget == {"artifacts": 0, "evidence": 0}
+
+
+def test_more_budget_restores_preferred_state_without_changing_required_state() -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[
+            Message(content="Preserve old cursors.", kind="constraints"),
+            Message(content="query plan " * 200, kind="evidence"),
+            Message(content="Timestamps alone skipped rows.", kind="failed_attempts"),
+        ],
+        artifacts=[Artifact(name="query-plan.txt", content="plan " * 200)],
+    )
+    base = ReceiverContract(
+        goal="Implement pagination",
+        required=("constraints",),
+        preferred=("failed_attempts",),
+        max_tokens=10_000,
+    )
+    small = compile_handoff(source, base)
+    contract = base.model_copy(
+        update={
+            "preferred": ("failed_attempts", "evidence", "artifacts"),
+            "max_tokens": small.packet_tokens,
+        }
+    )
+    tight = compile_handoff(source, contract)
+    roomy = compile_handoff(source, contract.model_copy(update={"max_tokens": 10_000}))
+    assert tight.packet.constraints == roomy.packet.constraints
+    assert tight.packet.failed_attempts == roomy.packet.failed_attempts
+    assert not tight.packet.evidence and not tight.packet.artifacts
+    assert roomy.packet.evidence and roomy.packet.artifacts
+    assert tight.budget is not None and roomy.budget is not None
+    assert tight.budget.required_tokens == roomy.budget.required_tokens
+    required_only = compile_handoff(source, base.model_copy(update={"preferred": ()}))
+    assert tight.budget.required_tokens == required_only.packet_tokens
+    assert tight.budget.preferred_omitted_for_budget == {
+        "failed_attempts": 0,
+        "evidence": 1,
+        "artifacts": 1,
+    }
+    assert not any(roomy.budget.preferred_omitted_for_budget.values())

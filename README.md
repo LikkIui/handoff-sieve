@@ -113,8 +113,9 @@ The demos above are in the GitHub checkout. For development, run
 `python -m pip install -e ".[dev]"` followed by `python -m pytest` there.
 Tests and offline demos do not require credentials.
 
-The checkout is now `0.3.0a2.dev0`. The live SDK contract filter and missing-state
-diagnostics are new on `main` and are not in the existing `0.3.0a1` release wheel.
+The checkout is now `0.3.0a2.dev0`. The live SDK contract filter, missing-state
+diagnostics, and budget feedback are new on `main`; they are not in the existing
+`0.3.0a1` release wheel.
 
 Token counts use an explicitly labelled UTF-8 estimate by default. Optional
 model-aware text counting is available with the `tiktoken` extra and
@@ -179,6 +180,18 @@ policy stage instead. Try the correction flow without a model call:
 
 ```bash
 python examples/missing_state/demo.py
+```
+
+`result.budget` reports the required context size, remaining space, and
+preferred items omitted for budget before or after processing. Required
+counts include the goal and packet overhead; all counts use the named local
+counter. `BudgetExceededError.budget` explains a required-state overflow.
+Feedback stays outside the receiver packet. To see a 250-token budget keep
+the failed approach and omit evidence, then a 1,000-token budget restore that
+evidence while preserving identical required state:
+
+```bash
+python examples/budget_feedback/demo.py
 ```
 
 Applications that already classify state can use the stricter

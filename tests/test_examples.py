@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = [
     ROOT / "examples" / "receiver_views" / "demo.py",
     ROOT / "examples" / "missing_state" / "demo.py",
+    ROOT / "examples" / "budget_feedback" / "demo.py",
     ROOT / "examples" / "researcher_to_coder" / "demo.py",
     ROOT / "examples" / "planner_to_executor" / "demo.py",
     ROOT / "examples" / "researcher_to_reviewer" / "demo.py",

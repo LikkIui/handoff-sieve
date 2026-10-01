@@ -12,6 +12,12 @@ files remain unchanged.
 
 ### Added
 
+- `BudgetReport` on compilation results and receiver-budget errors, including
+  required context size, remaining space, and separate preferred-item omission
+  counts before and after processing. Feedback never enters the receiver packet.
+- An offline budget demo that restores supporting evidence with a larger
+  contract while preserving identical required state, and reports the shortfall
+  when required state cannot fit.
 - Structured missing-state diagnostics with section counts, original
   unclassified message positions, and correction hints. Errors distinguish
   incomplete sender state from state removed by processing policies.

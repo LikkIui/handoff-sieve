@@ -89,6 +89,9 @@ def test_live_snapshot_includes_new_decisions_and_paired_tool_result() -> None:
     assert filtered.run_context is data.run_context
     assert filtered.pre_handoff_items == filtered.input_items == ()
     assert reports[0].packet_tokens <= 700
+    assert reports[0].budget is not None
+    assert reports[0].budget.packet_tokens == reports[0].packet_tokens
+    assert "budget" not in packet
 
 
 def test_input_items_override_session_items_and_filter_recompiles_each_call() -> None:

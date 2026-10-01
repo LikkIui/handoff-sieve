@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from handoff_sieve.compiler import ContractDiagnostics
+    from handoff_sieve.compiler import BudgetReport, ContractDiagnostics
     from handoff_sieve.normalization import NormalizationReport
     from handoff_sieve.report import AuditReport
 
@@ -25,6 +25,22 @@ class HandoffSieveError(Exception):
 
 class BudgetExceededError(HandoffSieveError):
     """Raised when protected content cannot fit within a hard budget."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        report: AuditReport | None = None,
+        budget: BudgetReport | None = None,
+    ) -> None:
+        super().__init__(message, report=report)
+        self.budget = budget
+
+    def __str__(self) -> str:
+        message = super().__str__()
+        if self.budget is not None:
+            return message + "\n" + self.budget.to_text()
+        return message
 
 
 class ConfigurationError(HandoffSieveError):
