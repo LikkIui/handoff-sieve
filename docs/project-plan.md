@@ -1,9 +1,9 @@
 # HandoffSieve 项目计划（接手修订版）
 
 > 状态：历史接管与工程记录；当前开发优先级以 `iteration-roadmap.md` 为准
-> 修订日期：2026-09-28
-> 正式候选：HandoffSieve；distribution `handoff-sieve`；import
-> `handoff_sieve`。远端仓库改名与 PyPI 坐标保留尚未执行。
+> 修订日期：2026-10-01
+> 正式名称：HandoffSieve；distribution `handoff-sieve`；import
+> `handoff_sieve`。公开仓库为 `LikkIui/handoff-sieve`，GitHub `v0.3.0a1` 已发布，PyPI 暂缓。
 >
 > **产品版本路线已重新调研并移至 [`iteration-roadmap.md`](iteration-roadmap.md)。**
 > 本文件继续记录 0.1 接管、安全基线和既有工作；其中阶段 6/7 的旧描述不再作为
@@ -11,7 +11,17 @@
 > 当前定位是 receiver-specific context / handoff optimization；本文后续的安全加固内容
 > 仅是已完成的底层能力，不代表当前产品主线或近期待办。
 
-## 0. 执行进度（2026-09-28）
+## 最新接管状态（2026-10-01）
+
+v0.1–v0.3 的核心实现、20 项真实接管评测及两个框架适配已完成；公开安装包可从 GitHub
+下载。PyPI 因维护者邮箱问题暂停，不是产品开发阻塞。当前新增同一历史面向 coder /
+reviewer 的双接收方 demo，已用发布 wheel 在源码目录外验证，README 提供完整上手路径。
+
+下一步接入一个实际的 OpenAI Agents SDK 或 LangGraph 工作流，发现并复现 contract
+编写、状态遗漏或接管成本方面的具体问题，再优化产品核心。下面保留的是历史工程记录，
+其旧版本号和当时的未完成项不代表当前状态；最新优先级见迭代路线。
+
+## 0. 历史执行进度（2026-09-28）
 
 已完成：
 

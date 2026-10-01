@@ -2,7 +2,7 @@
 
 > 状态：当前产品路线
 > 更新日期：2026-10-01
-> 当前代码版本：`0.3.0a1`，尚未公开发布
+> 当前代码版本：`0.3.0a1`，GitHub 预发布已公开，PyPI 暂缓
 > 本文负责产品迭代方向；`project-plan.md` 继续保留接管记录、已完成工作和工程证据。
 
 ## 产品一句话
@@ -295,10 +295,17 @@ wheel/sdist 安装和包外 LangGraph 示例均已通过。Python 3.10–3.13、
 SDK 版本、两个 LangGraph 版本及打包检查组成的 10 项云端 CI 已全部通过；公开仓库
 `LikkIui/handoff-sieve` 和 `v0.3.0a1` GitHub 预发布已经上线，附件可匿名下载且校验值一致。
 
-当前下一步是配置 PyPI pending publisher，使用 `publish-pypi.yml` 上传 GitHub 上已经
-验证的同一份安装包，并从 PyPI 干净安装复核。发布流程和账号填写项见
-[PyPI 发布说明](pypi-publishing.md)。PyPI 上线后优先收集真实 clone/install/takeover
-反馈，修正影响首次使用的具体问题；在出现真实用户需求前不扩展更多框架。
+PyPI 上传按用户要求暂缓，待邮箱和账号设置恢复后再进行。已准备的发布流程保留在
+[PyPI 发布说明](pypi-publishing.md)，不阻塞从 GitHub 安装和使用。
+
+当前推进首次使用体验：补充同一份 sender history 面向 coder / reviewer 的双接收方
+demo，直接展示不同 `ReceiverContract` 产生不同视图，同时保留共同的关键状态；README
+提供完整 clone / install / run 路径，并把详细策略参考移到文档。示例应同时通过离线
+断言和已发布 wheel 的包外运行，不借此扩大产品功能或追加模型调用。
+
+完成后优先接入一个实际 OpenAI Agents SDK 或 LangGraph 工作流，检查真实交接时如何
+建立 contract、识别遗漏并保留任务必要状态。先复现具体使用问题，再决定核心优化；
+继续沿用已有任务的验收方式，不新建大型 benchmark，也不扩展更多框架。
 
 ## 最高优先级停止条件
 

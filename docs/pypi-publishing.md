@@ -1,7 +1,8 @@
 # Publish the existing GitHub release to PyPI
 
-The public GitHub prerelease is `v0.3.0a1`. PyPI publication is pending account
-configuration. The workflow downloads its existing wheel and source archive,
+The public GitHub prerelease is `v0.3.0a1`. PyPI publication is paused at the
+maintainer's request while email and account setup are resolved. The workflow
+remains ready for a later upload. It downloads the existing wheel and source archive,
 checks their `SHA256SUMS`, verifies installation, and uploads those same bytes.
 It does not rebuild a released version or need a stored PyPI API token.
 

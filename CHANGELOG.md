@@ -9,9 +9,20 @@ changelog and migration notes explain them.
 
 ### Added
 
+- An offline demo that compiles the same sender history into distinct coder
+  and reviewer packets, with assertions for shared critical state and budgets.
+- Installed-wheel CI coverage for the two-receiver demo.
 - A manually triggered PyPI Trusted Publishing workflow that verifies and
   reuses existing GitHub release files, with an upload-free dry run and a
   post-upload PyPI installation check.
+
+### Changed
+
+- Shortened the README around complete clone/install/run instructions, the
+  receiver-specific demo, and the existing real-task result; moved detailed
+  cleanup-policy reference into `docs/policy-pipeline.md`.
+- Recorded the requested PyPI pause; the existing GitHub prerelease remains
+  the installation source while account setup is resolved.
 
 ## [0.3.0a1] - 2026-10-01
 
