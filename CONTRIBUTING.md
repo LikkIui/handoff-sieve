@@ -21,11 +21,11 @@ adapter requests so each report has the evidence needed for a decision.
 ## Local checks
 
 ```bash
-python -m pip install -e ".[dev,openai,tiktoken]"
+python -m pip install -e ".[dev,langgraph,openai,tiktoken]"
 python -m pytest
 ruff check .
 ruff format --check .
-mypy src
+mypy src evals
 python -m benchmarks.run --check
 ```
 
