@@ -287,6 +287,9 @@ def test_naive_summary_boundary_is_only_a_fixed_bounded_prompt() -> None:
     assert payloads.full_history.payload_text in prompt
     assert "Return plain text only" in prompt
     assert f"Do not exceed {task.contract.max_tokens} tokens" in prompt
+    assert "Do not perform the receiver's task or return its final answer" in prompt
+    quoted_task = prompt.split("Receiver task (JSON string):\n", 1)[1].split("\n", 1)[0]
+    assert json.loads(quoted_task) == receiver_task_prefix(task)
     assert "timestamp_tie" not in prompt
     assert not hasattr(payloads.naive_summary, "summary_text")
 

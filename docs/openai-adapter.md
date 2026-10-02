@@ -6,9 +6,16 @@ minor passes the integration suite.
 
 ## Compile the current SDK history at handoff
 
-`0.3.0a2` adds `OpenAIReceiverContractFilter`. Install the checkout with
-`python -m pip install -e ".[openai]"`, or install the GitHub release wheel with
-the `openai` extra. This API is not in the older `0.3.0a1` wheel.
+Install `0.3.0a3` with the `openai` extra from its GitHub release:
+
+```bash
+python -m pip install "handoff-sieve[openai] @ https://github.com/LikkIui/handoff-sieve/releases/download/v0.3.0a3/handoff_sieve-0.3.0a3-py3-none-any.whl"
+```
+
+PyPI publication remains paused. To run repository examples, check out
+`v0.3.0a3` and install with `python -m pip install -e ".[openai]"`.
+`OpenAIReceiverContractFilter` was introduced in `0.3.0a2`; this API is not in
+the older `0.3.0a1` wheel.
 
 ```python
 from agents import handoff
@@ -60,6 +67,36 @@ routing items are omitted and completed tool pairs are combined. Correct the
 source state explicitly and retry; the filter never invents missing facts.
 
 See the [runnable SDK takeover example](../examples/openai_takeover/README.md).
+
+### Continue to a third agent
+
+`0.3.0a3` recognizes a previous receiver packet by its complete
+fixed public shape in user text. It expands that packet's section state and
+artifacts, adds new messages and completed function results, and compiles a
+new view for the next receiver. Its prior `receiver` must match the current
+filter's `sender`; a mismatch raises `HandoffIntegrityError`. Ordinary JSON
+without the complete packet shape stays ordinary history.
+
+Explicit current `artifacts=` replace inherited artifacts with the same name;
+other inherited artifacts remain. Names identify application outputs at this
+boundary. Applications must provide changed artifacts explicitly; the adapter
+does not inspect files or choose between conflicting current artifacts.
+
+Only state retained by the earlier contract can be inherited. If the reviewer
+needs a decision, make sure the coder's contract retained it too. Section
+membership is carried forward even when the original message used a default
+kind. The new goal comes from the next `ReceiverContract`.
+
+The [three-agent relay](../examples/three_agent_relay/README.md) exercises both
+handoffs in one real SDK run and independently checks the generated code.
+Continuous handoffs are included in `0.3.0a3`; the older `0.3.0a2` wheel
+retains its original behavior.
+
+Canonical receiver JSON keeps every packet section but omits item fields equal
+to public model defaults. Parse it with `HandoffPacket.model_validate_json()`
+before accessing default roles, kinds, tags, or metadata. Non-default item
+state is retained. See the [migration notes](migration.md) for details and the
+offline 17.2% re-rendering comparison, which is not a provider-billing result.
 
 ## Send an already compiled receiver view
 

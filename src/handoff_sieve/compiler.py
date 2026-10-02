@@ -283,7 +283,9 @@ class HandoffPacket(BaseModel):
         messages: list[Message] = []
         for section in MESSAGE_SECTION_NAMES:
             messages.extend(
-                Message.model_validate(message.model_dump(mode="python"))
+                Message.model_validate(
+                    {**message.model_dump(mode="python"), "kind": section}
+                )
                 for message in getattr(self, section)
             )
         return HandoffEnvelope(
@@ -297,16 +299,20 @@ class HandoffPacket(BaseModel):
     def to_receiver_text(self) -> str:
         """Return the canonical JSON receiver view used for token counting.
 
-        The representation is deterministic and contains the complete public
-        packet, including its goal and artifacts. Framework adapters can send
-        this text directly without inventing a second rendering whose size or
-        contents drift from the compiled packet.
+        The representation retains every section, goal, and artifact while
+        omitting item fields equal to their public model defaults. Parsing it
+        with ``HandoffPacket.model_validate_json`` restores those defaults
+        without losing public state. Framework adapters send this same text,
+        so their receiver view matches the compiled token budget.
         """
 
-        public_packet = self.model_dump(mode="json")
+        public_packet = self.model_dump(mode="json", exclude_defaults=True)
+        for section in SECTION_NAMES:
+            public_packet.setdefault(section, [])
         for section in MESSAGE_SECTION_NAMES:
             for message in public_packet[section]:
-                message["tags"] = sorted(message["tags"])
+                if "tags" in message:
+                    message["tags"] = sorted(message["tags"])
         return json.dumps(
             public_packet,
             ensure_ascii=False,

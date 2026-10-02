@@ -7,10 +7,32 @@ core and the OpenAI Agents SDK adapter.
 ## Install
 
 ```bash
-python -m pip install "handoff-sieve[langgraph]"
+python -m pip install "handoff-sieve[langgraph] @ https://github.com/LikkIui/handoff-sieve/releases/download/v0.3.0a3/handoff_sieve-0.3.0a3-py3-none-any.whl"
 ```
 
 The supported compatibility window is LangGraph `>=1.0,<2`.
+PyPI publication remains paused. The `0.3.0a3` release includes continuous
+handoffs. To run repository examples, check out `v0.3.0a3` and install with
+`python -m pip install -e ".[langgraph]"`.
+
+In `0.3.0a3`, a resolved state containing a previous
+`LangGraphHandoff` message can be compiled for the next agent. Its packet
+sections and artifacts are inherited before new state is classified. The
+message marker must agree with the packet, and its prior receiver must be the
+current sender. The message is the source of this state; the optional
+`handoff_packet` state key is not a second source that could duplicate it.
+Explicit current state artifacts replace inherited artifacts with the same
+name. State dropped by an earlier contract cannot be recovered later.
+
+Canonical receiver JSON keeps every packet section but omits item fields equal
+to public model defaults. `state["handoff_packet"]` already contains the full
+public packet dictionary, including item defaults; consumers of message text
+can use
+`HandoffPacket.model_validate_json(message.content)` to restore defaults.
+Non-default item state is retained. See the [migration notes](migration.md)
+for the wire-format change and the offline 17.2% re-rendering comparison,
+which does not measure provider-token or billing savings. The older `0.3.0a2`
+and `0.3.0a1` wheels retain their original behavior.
 
 ## Compile and route
 

@@ -11,6 +11,11 @@ from copy import deepcopy
 from importlib import import_module
 from typing import Any
 
+from handoff_sieve.adapters._packet import (
+    check_packet_receiver,
+    merge_artifacts,
+    packet_from_text,
+)
 from handoff_sieve.compiler import HandoffPacket, ReceiverContract
 from handoff_sieve.exceptions import HandoffIntegrityError
 from handoff_sieve.models import Artifact, HandoffEnvelope, Message
@@ -55,7 +60,9 @@ def _coerce_langchain_messages(raw_messages: Sequence[Any]) -> list[Any]:
     return converted
 
 
-def langgraph_messages_to_history(raw_messages: Sequence[Any]) -> list[Message]:
+def _messages_to_state(
+    raw_messages: Sequence[Any], *, sender: str | None = None
+) -> tuple[list[Message], list[Artifact]]:
     """Convert a complete LangGraph message state into normalizable history.
 
     An ``AIMessage`` tool call and its matching ``ToolMessage`` are collapsed
@@ -74,6 +81,7 @@ def langgraph_messages_to_history(raw_messages: Sequence[Any]) -> list[Message]:
     messages = _coerce_langchain_messages(raw_messages)
 
     history: list[Message] = []
+    artifacts: list[Artifact] = []
     pending: dict[str, dict[str, Any]] = {}
     completed: set[str] = set()
 
@@ -132,6 +140,26 @@ def langgraph_messages_to_history(raw_messages: Sequence[Any]) -> list[Message]:
             "chat": getattr(raw, "role", "user"),
         }.get(message_type, message_type or "user")
 
+        packet = packet_from_text(raw.content) if role == "user" else None
+        marker = raw.additional_kwargs.get("handoff_sieve")
+        if marker is not None:
+            if (
+                packet is None
+                or not isinstance(marker, dict)
+                or marker.get("sender") != packet.sender
+                or marker.get("receiver") != packet.receiver
+            ):
+                raise HandoffIntegrityError(
+                    "LangGraph receiver packet marker is invalid."
+                )
+        if packet is not None:
+            if sender is not None:
+                check_packet_receiver(packet, sender)
+            inherited = packet.to_envelope()
+            history.extend(inherited.messages)
+            artifacts.extend(inherited.artifacts)
+            continue
+
         if raw.content not in ("", []):
             metadata: dict[str, Any] = {}
             name = getattr(raw, "name", None)
@@ -168,6 +196,17 @@ def langgraph_messages_to_history(raw_messages: Sequence[Any]) -> list[Message]:
         raise HandoffIntegrityError(
             f"LangGraph history ends with unfinished tool calls: {call_ids}."
         )
+    return history, artifacts
+
+
+def langgraph_messages_to_history(raw_messages: Sequence[Any]) -> list[Message]:
+    """Map messages and expand previous packets into explicitly typed state.
+
+    Completed tool pairs remain one semantic tool result. Use
+    ``langgraph_state_to_envelope`` to also carry packet artifacts forward.
+    """
+
+    history, _ = _messages_to_state(raw_messages)
     return history
 
 
@@ -187,20 +226,23 @@ def langgraph_state_to_envelope(
     if not isinstance(raw_messages, Sequence) or isinstance(raw_messages, (str, bytes)):
         raise TypeError(f"state[{messages_key!r}] must be a message sequence")
 
-    artifacts: list[Artifact] = []
+    messages, artifacts = _messages_to_state(raw_messages, sender=sender)
+    current_artifacts: list[Artifact] = []
     if artifacts_key is not None:
         raw_artifacts = state.get(artifacts_key, ())
         if not isinstance(raw_artifacts, Sequence) or isinstance(
             raw_artifacts, (str, bytes)
         ):
             raise TypeError(f"state[{artifacts_key!r}] must be an artifact sequence")
-        artifacts = [Artifact.model_validate(artifact) for artifact in raw_artifacts]
+        current_artifacts = [
+            Artifact.model_validate(artifact) for artifact in raw_artifacts
+        ]
 
     return HandoffEnvelope(
         sender=sender,
         receiver=receiver,
-        messages=langgraph_messages_to_history(raw_messages),
-        artifacts=artifacts,
+        messages=messages,
+        artifacts=merge_artifacts(artifacts, current_artifacts),
     )
 
 

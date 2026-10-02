@@ -1,5 +1,50 @@
 # Alpha migration notes
 
+## `0.3.0a3`
+
+Install the GitHub prerelease wheel or check out `v0.3.0a3` and install the
+project in editable mode. PyPI publication remains paused; `0.3.0a2` and
+`0.3.0a1` release files are unchanged.
+
+- Canonical receiver JSON keeps the fixed top-level packet sections but omits
+  item fields equal to public model defaults. Decode it with
+  `HandoffPacket.model_validate_json()` to restore defaults. Non-default roles,
+  kinds, tags, metadata, content, and artifact fields are preserved. Budgeting
+  and adapters use that same canonical text.
+- `HandoffPacket.to_envelope()` now explicitly assigns section kinds so that
+  a packet can be compiled for a subsequent receiver. OpenAI and LangGraph
+  contract adapters expand prior packet state, require the prior receiver to
+  match the current sender, and let explicitly current artifacts replace
+  inherited artifacts with the same name.
+- `prepare_sender_state()` is an opt-in helper before compilation, using exact
+  `metadata.task_id` and `metadata.state_key` identities. It never infers state
+  updates from prose; applications that do not call it retain existing behavior.
+- Normalization recognizes explicit multi-section dictionaries and Markdown
+  headings after a preamble. Unknown dictionary keys and preambles remain
+  unclassified. A source containing both recognized and unclassified content
+  is counted in both report groups; indices remain original source positions.
+
+If a consumer previously indexed every item field directly in `json.loads()`
+output, switch to the public packet model to restore omitted defaults:
+
+```python
+from handoff_sieve import HandoffPacket
+
+packet = HandoffPacket.model_validate_json(receiver_input)
+message = packet.decisions[0]
+print(message.role, message.kind, message.tags, message.metadata)
+```
+
+Default `Message.role="user"`, `kind="message"`, empty tags and metadata, and
+default artifact fields can be absent from wire JSON. The typed models and
+`packet.model_dump()` retain these fields. This does not change section names
+or remove non-default item state.
+
+Re-rendering the 20 saved checkpoint packets with this format preserves
+identical typed state while reducing the local UTF-8 estimate from 8,177 to
+6,773 handoff tokens (17.2%). Provider usage, billing, and downstream success
+were not remeasured; the historical provider records remain unchanged.
+
 `0.3.0a1` is the first public prerelease. Users of the earlier copied RelayGuard
 prototype should review these changes before replacing it.
 

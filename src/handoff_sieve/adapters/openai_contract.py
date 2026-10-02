@@ -6,6 +6,11 @@ from collections.abc import Callable, Sequence
 from copy import deepcopy
 from typing import Any
 
+from handoff_sieve.adapters._packet import (
+    check_packet_receiver,
+    merge_artifacts,
+    packet_from_text,
+)
 from handoff_sieve.adapters.openai_agents import (
     OpenAIHandoffFilter,
     OpenAIHandoffPacketFilter,
@@ -69,20 +74,34 @@ def _text_messages(item: dict[str, Any]) -> list[Message]:
     return [Message(role=role, content="\n".join(texts))] if texts else []
 
 
-def _messages_from_snapshot(data: Any) -> list[Message]:
+def _state_from_snapshot(
+    data: Any, *, sender: str
+) -> tuple[list[Message], list[Artifact]]:
     messages: list[Message] = []
+    artifacts: list[Artifact] = []
     pending: dict[str, dict[str, Any]] = {}
     completed: set[str] = set()
     for raw in _snapshot_items(data):
         item = OpenAIHandoffFilter._to_plain_item(raw)
         if isinstance(item, str):
-            messages.append(Message(content=item))
-            continue
+            item = {"role": "user", "content": item}
         if not isinstance(item, dict):
             raise UnsupportedAdapterModeError("OpenAI history items must be mappings.")
         kind = item.get("type", "message")
         if kind == "message":
-            messages.extend(_text_messages(item))
+            for message in _text_messages(item):
+                packet = (
+                    packet_from_text(message.content)
+                    if message.role == "user"
+                    else None
+                )
+                if packet is None:
+                    messages.append(message)
+                    continue
+                check_packet_receiver(packet, sender)
+                inherited = packet.to_envelope()
+                messages.extend(inherited.messages)
+                artifacts.extend(inherited.artifacts)
         elif kind == "reasoning":
             continue
         elif kind in {"function_call", "function_call_output"}:
@@ -122,7 +141,7 @@ def _messages_from_snapshot(data: Any) -> list[Message]:
         raise HandoffIntegrityError(
             "OpenAI history contains unfinished function tools."
         )
-    return messages
+    return messages, artifacts
 
 
 def compile_openai_handoff(
@@ -141,12 +160,13 @@ def compile_openai_handoff(
     Original SDK items and local run_context are never mutated or serialized.
     """
 
+    messages, inherited_artifacts = _state_from_snapshot(data, sender=sender)
     return compile_history(
         HandoffEnvelope(
             sender=sender,
             receiver=receiver,
-            messages=_messages_from_snapshot(data),
-            artifacts=[artifact.model_copy(deep=True) for artifact in artifacts],
+            messages=messages,
+            artifacts=merge_artifacts(inherited_artifacts, artifacts),
         ),
         contract,
         normalizer=normalizer,

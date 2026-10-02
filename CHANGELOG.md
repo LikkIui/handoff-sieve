@@ -9,6 +9,43 @@ changelog and migration notes explain them.
 
 No unreleased changes.
 
+## [0.3.0a3] - 2026-10-02
+
+Continuous receiver-contract handoffs, compact packet rendering, and explicit
+current-state preparation are included in the GitHub prerelease. PyPI remains
+paused; published `0.3.0a2` and `0.3.0a1` release files remain unchanged.
+
+### Added
+
+- A complete offline researcher → coder → reviewer SDK relay, with actual
+  file generation, five coder checks, nine independent reviewer checks, and
+  a negative case that rejects the previously failed approach.
+- Optional `prepare_sender_state()` for explicit task scope, keyed current
+  state updates, completed pending work, and exact deduplication before budgets.
+
+### Changed
+
+- Canonical packet rendering omits item defaults while preserving all typed
+  state. The 20 saved packets re-render losslessly from 8,177 to 6,773 estimated
+  handoff tokens, a 17.2% reduction. This local serialization comparison does
+  not measure provider-token or billing savings; existing provider usage and
+  success records are unchanged. See the [migration notes](docs/migration.md)
+  for default-field restoration when parsing receiver JSON.
+- Normalization recognizes multi-section dictionaries and explicit Markdown
+  blocks after preambles while preserving unclassified content and indices.
+- Future naive-summary prompts quote receiver requirements as data and prohibit
+  executing the receiving task. The historical result notes disclose a saved
+  preparation output that answered the task instead of summarizing state.
+
+### Fixed
+
+- Continuous OpenAI and LangGraph contract handoffs now expand previous packet
+  sections and artifacts before compiling the next receiver view.
+- Explicit current artifacts replace inherited same-name outputs, preventing
+  an old implementation from being passed beside its current replacement.
+- The LangGraph installation guide uses the available GitHub package while
+  PyPI publication remains paused.
+
 ## [0.3.0a2] - 2026-10-01
 
 Runtime receiver-contract compilation, missing-state recovery, and budget
@@ -136,7 +173,9 @@ was superseded before publication by `0.3.0a1`.
 - Egress redaction prevents a summarizer or custom transform from bypassing the
   final secret scan.
 
-[Unreleased]: https://github.com/LikkIui/handoff-sieve/compare/v0.3.0a1...HEAD
+[Unreleased]: https://github.com/LikkIui/handoff-sieve/compare/v0.3.0a3...HEAD
+[0.3.0a3]: https://github.com/LikkIui/handoff-sieve/releases/tag/v0.3.0a3
+[0.3.0a2]: https://github.com/LikkIui/handoff-sieve/releases/tag/v0.3.0a2
 [0.3.0a1]: https://github.com/LikkIui/handoff-sieve/releases/tag/v0.3.0a1
 [0.2.0a1]: https://github.com/LikkIui/handoff-sieve/releases/tag/v0.2.0a1
 [0.1.0a1]: https://github.com/LikkIui/handoff-sieve/releases/tag/v0.1.0a1

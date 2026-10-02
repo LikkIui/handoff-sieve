@@ -1,6 +1,6 @@
 # GitHub alpha release checklist
 
-Current release: `0.3.0a2`, tag `v0.3.0a2`. PyPI publication remains paused
+Current release: `0.3.0a3`, tag `v0.3.0a3`. PyPI publication remains paused
 at the maintainer's request; GitHub package verification and publication do
 not depend on completing PyPI account setup.
 
@@ -25,8 +25,9 @@ not depend on completing PyPI account setup.
 - `python -m build` and `python -m twine check --strict dist/*`
 - Install the wheel and source distribution in fresh virtual environments;
   run `scripts/verify_installed.py` outside the source checkout.
-- Run the receiver views, missing-state correction, budget feedback, and SDK
-  takeover demos using the installed wheel, without a key or model request.
+- Run the receiver views, missing-state correction, budget feedback, SDK
+  takeover, and three-agent relay demos using the installed wheel, without a
+  key or model request.
 - Unpack the sdist and run its included tests and benchmark to verify that it
   is self-contained.
 - Pass existing Python 3.10-3.13, OpenAI Agents SDK 0.22.x, LangGraph

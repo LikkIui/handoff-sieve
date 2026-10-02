@@ -1,6 +1,6 @@
 # Publish the existing GitHub release to PyPI
 
-The current GitHub prerelease is `v0.3.0a2`. PyPI publication is paused at the
+The current GitHub prerelease is `v0.3.0a3`. PyPI publication is paused at the
 maintainer's request while email and account setup are resolved. The workflow
 remains ready for a later upload. It downloads the existing wheel and source archive,
 checks their `SHA256SUMS`, verifies installation, and uploads those same bytes.
@@ -33,10 +33,10 @@ refuses other branches and grants OIDC permission only to the upload job.
 Open [Publish to PyPI](https://github.com/LikkIui/handoff-sieve/actions/workflows/publish-pypi.yml)
 and choose **Run workflow** on `main`:
 
-1. Set `release_tag` to `v0.3.0a2` and leave `publish` off for a dry run.
+1. Set `release_tag` to `v0.3.0a3` and leave `publish` off for a dry run.
 2. After the account publisher is configured, run again with `publish` on.
 3. Confirm all three jobs pass. The final job compares PyPI file hashes with
-   the GitHub release and installs `handoff-sieve==0.3.0a2` from PyPI.
+   the GitHub release and installs `handoff-sieve==0.3.0a3` from PyPI.
 
 The workflow requires successful source CI for the release tag. Dry runs do not
 request a PyPI token or upload files. PyPI does not allow replacing an uploaded

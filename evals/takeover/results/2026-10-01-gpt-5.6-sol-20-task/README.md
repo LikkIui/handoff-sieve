@@ -58,6 +58,21 @@ uncorrected files remain in the two source result directories named in
 
 ## Files and limits
 
+An offline review on 2026-10-02 found that the summary preparation output for
+`rr03_retry_after_review` is a final verdict JSON rather than a state summary;
+the receiver repeats that incorrect verdict. The original summary prompt
+included the receiver's output instructions without a separate data boundary.
+Instruction interference is a possible explanation, not a confirmed cause.
+Future runs quote those requirements as reference data and explicitly restrict
+the preparation step to summarization. This checkpoint predates that change;
+its raw outputs, counts, failures, and denominator are unchanged. The comparison
+with Naive Summary therefore also reflects the behavior of that original prompt.
+
+This checkpoint also predates compact default-field omission. Re-rendering
+its 20 saved packets locally gives 6,773 estimated handoff tokens instead of
+8,177 with identical public packet models. This is an offline format measurement;
+it does not change this table's original provider usage or task success results.
+
 `aggregate.json` is derived from the 20 JSONL files in this directory. Each
 JSONL contains the exact receiver input, raw output, provider usage, model-call
 count, and host-side checks. The test suite rebuilds the aggregate from these

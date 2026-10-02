@@ -35,6 +35,7 @@ from handoff_sieve.normalization import (
 from handoff_sieve.pipeline import HandoffPipeline
 from handoff_sieve.report import AuditEvent, AuditReport
 from handoff_sieve.reporters import AuditReporter, CallbackReporter, JsonlReporter
+from handoff_sieve.state import prepare_sender_state
 from handoff_sieve.tokens import ApproxTokenCounter, TiktokenCounter, TokenCounter
 
 __all__ = [
@@ -76,4 +77,5 @@ __all__ = [
     "__version__",
     "compile_handoff",
     "compile_history",
+    "prepare_sender_state",
 ]

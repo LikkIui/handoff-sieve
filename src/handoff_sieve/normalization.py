@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Sequence
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,7 +29,12 @@ from handoff_sieve.pipeline import HandoffPipeline
 
 
 class NormalizationReport(BaseModel):
-    """Content-free explanation of how a history was classified."""
+    """Content-free explanation of how original input messages were classified.
+
+    A message containing both explicit sections and unclassified content is
+    counted in both groups. Indices always refer to the original messages,
+    before any section expansion.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -139,13 +145,15 @@ _TEXT_LABELS: dict[str, SectionName] = {
 }
 
 _TEXT_PREFIX = re.compile(
-    r"^\s*(?:[-*]\s+)?(?P<label>"
+    r"^(?P<label>"
     + "|".join(
         re.escape(label) for label in sorted(_TEXT_LABELS, key=len, reverse=True)
     )
-    + r")\s*[:：]\s*(?P<body>\S(?:.|\n)*)$",
+    + r")\s*[:：]\s*(?P<body>(?:.|\n)*)$",
     flags=re.IGNORECASE,
 )
+_MARKDOWN_PREFIX = re.compile(r"^(?:[-*][ \t]+)?(?:#{1,6}[ \t]+)?")
+_CODE_FENCE = re.compile(r"^(?P<marker>`{3,}|~{3,})(?P<tail>.*)$")
 
 _TOOL_KINDS = frozenset({"tool", "tool_result", "tool_results", "tool_output"})
 _METADATA_KEYS = ("handoff_section", "receiver_section")
@@ -155,8 +163,8 @@ class RuleBasedHistoryNormalizer:
     """Classify common agent history shapes with transparent fixed rules.
 
     Signals are intentionally narrow: an existing section kind/tag, a
-    dedicated metadata hint, a tool role/kind, one recognized structured key,
-    or a heading at the start of text.  Unrecognized conversation remains
+    dedicated metadata hint, a tool role/kind, recognized structured keys,
+    or explicit text headings. Unrecognized conversation remains
     unclassified and therefore does not enter the receiver packet.
     """
 
@@ -169,14 +177,23 @@ class RuleBasedHistoryNormalizer:
         unclassified_indices: list[int] = []
 
         for item_number, message in enumerate(source.messages):
-            text_sections = _split_text_sections(message)
-            if text_sections is not None:
+            sections: (
+                Sequence[tuple[SectionName | None, str | dict[str, Any]]] | None
+            ) = _split_structured_sections(message)
+            split_rule = "structured_key_sections"
+            if sections is None:
+                sections = _split_text_sections(message)
+                split_rule = "text_prefix_sections"
+            if sections is not None:
                 classified += 1
                 normalized += 1
-                rule_counts["text_prefix_sections"] += 1
-                for text_section, content in text_sections:
+                rule_counts[split_rule] += 1
+                if any(section is None for section, _ in sections):
+                    unclassified_indices.append(item_number)
+                for section, content in sections:
                     copied = message.model_copy(deep=True)
-                    copied.kind = text_section
+                    if section is not None:
+                        copied.kind = section
                     copied.content = content
                     normalized_messages.append(copied)
                 continue
@@ -203,7 +220,7 @@ class RuleBasedHistoryNormalizer:
             total_messages=len(source.messages),
             classified_messages=classified,
             normalized_messages=normalized,
-            unclassified_messages=len(source.messages) - classified,
+            unclassified_messages=len(unclassified_indices),
             unclassified_message_indices=tuple(unclassified_indices),
             rule_counts=dict(sorted(rule_counts.items())),
         )
@@ -361,54 +378,120 @@ def _section_from_text(
 ) -> tuple[SectionName | None, str | None]:
     if not isinstance(content, str):
         return None, None
-    match = _TEXT_PREFIX.match(content)
-    if match is None:
+    heading = _text_heading(content)
+    if heading is None or not heading[1].strip():
         return None, None
-    label = match.group("label").casefold()
-    return _TEXT_LABELS[label], match.group("body").strip()
+    return heading[0], heading[1].strip()
 
 
-def _split_text_sections(message: Message) -> list[tuple[SectionName, str]] | None:
+def _has_classification_override(message: Message) -> bool:
+    return bool(
+        _explicit_sections(message)
+        or any(key in message.metadata for key in _METADATA_KEYS)
+        or message.role.casefold() == "tool"
+        or message.kind.casefold() in _TOOL_KINDS
+    )
+
+
+def _split_structured_sections(
+    message: Message,
+) -> list[tuple[SectionName | None, dict[str, Any]]] | None:
+    """Split explicit multi-section dictionaries without interpreting values."""
+
+    if not isinstance(message.content, dict) or _has_classification_override(message):
+        return None
+    sections = {
+        section
+        for key in message.content
+        if (section := _SECTION_ALIASES.get(_normalize_key(key))) is not None
+    }
+    if len(sections) < 2:
+        return None
+    output: list[tuple[SectionName | None, dict[str, Any]]] = []
+    remainder: dict[str, Any] = {}
+    for key, value in message.content.items():
+        section = _SECTION_ALIASES.get(_normalize_key(key))
+        if section is None:
+            remainder[key] = value
+        else:
+            output.append((section, {key: value}))
+    if remainder:
+        output.append((None, remainder))
+    return output
+
+
+def _text_heading(content: str) -> tuple[SectionName, str] | None:
+    """Recognize plain, Markdown heading, or balanced bold section labels."""
+
+    text = _MARKDOWN_PREFIX.sub("", content.strip(), count=1)
+    if text.startswith("**"):
+        closing = text.find("**", 2)
+        if closing < 0:
+            return None
+        label = text[2:closing]
+        plain_label = label.rstrip().removesuffix(":").removesuffix("：").strip()
+        if plain_label.casefold() not in _TEXT_LABELS:
+            return None
+        suffix = text[closing + 2 :]
+        text = label + suffix
+    match = _TEXT_PREFIX.match(text)
+    if match is None:
+        return None
+    return _TEXT_LABELS[match.group("label").casefold()], match.group("body")
+
+
+def _split_text_sections(
+    message: Message,
+) -> list[tuple[SectionName | None, str]] | None:
     """Split an explicitly headed, multi-section note; keep continuation lines.
 
     Existing kinds, tags, metadata hints, and tool semantics take precedence.
     Labels inside fenced code do not start a new section. A leading unlabelled
-    paragraph is not interpreted as a section or silently dropped.
+    paragraph remains unclassified while later explicit headings are split.
     """
 
-    if (
-        not isinstance(message.content, str)
-        or _explicit_sections(message)
-        or any(key in message.metadata for key in _METADATA_KEYS)
-        or message.role.casefold() == "tool"
-        or message.kind.casefold() in _TOOL_KINDS
-    ):
+    if not isinstance(message.content, str) or _has_classification_override(message):
         return None
     lines = message.content.strip().splitlines()
-    if not lines or _TEXT_PREFIX.match(lines[0]) is None:
+    if not lines:
         return None
-    sections: list[tuple[SectionName, str]] = []
+    sections: list[tuple[SectionName | None, str]] = []
     current_section: SectionName | None = None
     body: list[str] = []
-    fence: str | None = None
+    heading_line = ""
+    fence: tuple[str, int] | None = None
+
+    def append_section() -> None:
+        content = "\n".join(body).strip()
+        if content:
+            sections.append((current_section, content))
+        elif current_section is not None:
+            sections.append((None, heading_line))
+
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith(("```", "~~~")):
-            marker = stripped[:3]
+        fence_match = _CODE_FENCE.match(stripped)
+        if fence_match is not None:
+            marker = fence_match.group("marker")
             if fence is None:
-                fence = marker
-            elif fence == marker:
+                fence = (marker[0], len(marker))
+            elif (
+                marker[0] == fence[0]
+                and len(marker) >= fence[1]
+                and not fence_match.group("tail").strip()
+            ):
                 fence = None
             body.append(line)
             continue
-        match = _TEXT_PREFIX.match(line) if fence is None else None
-        if match is not None:
-            if current_section is not None:
-                sections.append((current_section, "\n".join(body).strip()))
-            current_section = _TEXT_LABELS[match.group("label").casefold()]
-            body = [match.group("body")]
+        heading = _text_heading(line) if fence is None else None
+        if heading is not None:
+            append_section()
+            current_section = heading[0]
+            heading_line = line
+            body = [heading[1]]
         else:
             body.append(line)
-    if current_section is not None:
-        sections.append((current_section, "\n".join(body).strip()))
-    return sections if len(sections) > 1 else None
+    append_section()
+    if any(section is not None for section, _ in sections) and len(sections) > 1:
+        return sections
+    return None

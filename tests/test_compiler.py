@@ -12,6 +12,7 @@ from handoff_sieve import (
     CallbackReporter,
     ContractError,
     HandoffEnvelope,
+    HandoffPacket,
     HandoffPipeline,
     Message,
     ReceiverContract,
@@ -104,8 +105,7 @@ def test_receiver_text_is_canonical_and_matches_packet_token_count() -> None:
 
     receiver_text = result.packet.to_receiver_text()
 
-    expected = result.packet.model_dump(mode="json")
-    expected["decisions"][0]["tags"] = ["alpha", "zeta"]
+    expected = json.loads(receiver_text)
     assert receiver_text == json.dumps(
         expected,
         ensure_ascii=False,
@@ -113,6 +113,9 @@ def test_receiver_text_is_canonical_and_matches_packet_token_count() -> None:
         sort_keys=True,
     )
     payload = json.loads(receiver_text)
+    assert HandoffPacket.model_validate_json(receiver_text).model_dump() == (
+        result.packet.model_dump()
+    )
     assert payload["decisions"][0]["tags"] == ["alpha", "zeta"]
     assert payload["decisions"][0]["content"] == {
         "accepted": True,

@@ -1,9 +1,9 @@
 # HandoffSieve 项目计划（接手修订版）
 
 > 状态：历史接管与工程记录；当前开发优先级以 `iteration-roadmap.md` 为准
-> 修订日期：2026-10-01
+> 修订日期：2026-10-02
 > 正式名称：HandoffSieve；distribution `handoff-sieve`；import
-> `handoff_sieve`。公开仓库为 `LikkIui/handoff-sieve`，当前 GitHub alpha 为 `0.3.0a2`，PyPI 暂缓。
+> `handoff_sieve`。公开仓库为 `LikkIui/handoff-sieve`，当前 GitHub alpha 为 `0.3.0a3`，PyPI 暂缓。
 >
 > **产品版本路线已重新调研并移至 [`iteration-roadmap.md`](iteration-roadmap.md)。**
 > 本文件继续记录 0.1 接管、安全基线和既有工作；其中阶段 6/7 的旧描述不再作为
@@ -11,7 +11,20 @@
 > 当前定位是 receiver-specific context / handoff optimization；本文后续的安全加固内容
 > 仅是已完成的底层能力，不代表当前产品主线或近期待办。
 
-## 最新接管状态（2026-10-01）
+## 最新接管状态（2026-10-02）
+
+本轮新增能力收敛为 `0.3.0a3`：连续交接修复、紧凑 packet、
+明确任务和状态标识的可选预处理、输入格式兼容，以及真实 SDK 的三 Agent 离线接力。
+编码员实际生成文件，审核员独立检查全部 8 组布尔行为和 keyword-only API；恢复旧错误的
+负例被拦下。两次交接均只传一个 receiver packet，保留旧关键状态并加入新工作。
+精简旧 20 个包的公共模型保持相同，本地估算 token 减少 17.2%；旧 provider 结果保持原样。
+当前附件按显式同名新版本替换继承版本，避免把旧实现与新实现同时交给审核员。
+验证完成：348 项测试通过；Ruff、格式、Mypy、离线基准和 task manifest 检查通过。
+`0.3.0a3.dev0` wheel/sdist 构建及严格元数据检查通过，独立环境安装 wheel 后在源码目录外
+复核公开 API、两个适配器和三 Agent 接力，编码 5/5、审核 9/9；源版本与安装元数据一致。
+上述开发版验证仅作本地证据，发布包从正式版本的精确 Git commit 重新构建，沿用
+相同回归及独立安装检查；旧 `0.3.0a1` / `0.3.0a2` 标签与附件保持原样。
+下一步围绕完整接力的实际使用反馈修正遗漏状态与无关上下文；PyPI 保持暂缓，不增加框架或协议。
 
 v0.1–v0.3 的核心实现、20 项真实接管评测及两个框架适配已完成；公开安装包可从 GitHub
 下载。PyPI 因维护者邮箱问题暂停，不是产品开发阻塞。当前新增同一历史面向 coder /

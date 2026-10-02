@@ -30,6 +30,7 @@ or model call is needed:
 ```bash
 git clone https://github.com/LikkIui/handoff-sieve.git
 cd handoff-sieve
+git checkout v0.3.0a3
 python -m pip install -e .
 python examples/receiver_views/demo.py
 ```
@@ -39,8 +40,8 @@ python examples/receiver_views/demo.py
 | Context | Estimated tokens | Receiver-specific content |
 |---|---:|---|
 | Full sender history | 3,536 | All messages, tool results, artifacts, and unrelated notes |
-| Coder packet | 225 | Implementation decision and files to modify |
-| Reviewer packet | 209 | Supporting evidence and tool checks |
+| Coder packet | 184 | Implementation decision and files to modify |
+| Reviewer packet | 165 | Supporting evidence and tool checks |
 
 Both packets preserve the compatibility constraint, failed approach, and
 pending work. Unrelated hosting and launch notes disappear. The demo asserts
@@ -57,7 +58,7 @@ python examples/researcher_to_coder/demo.py
 
 ```text
 Before: 5,979 estimated tokens
-After HandoffSieve: 438 estimated tokens
+After HandoffSieve: 372 estimated tokens
 Receiver boundary: canonical HandoffPacket JSON only
 Takeover acceptance: PASSED (5/5 checks)
 ```
@@ -65,6 +66,18 @@ Takeover acceptance: PASSED (5/5 checks)
 This second demo uses a deterministic offline receiver to generate a small
 Python module from the packet, then checks its API and four behaviors. It is
 an installation and boundary demonstration, not a claim about LLM coding ability.
+
+For a complete researcher → coder → reviewer relay in the `0.3.0a3` checkout:
+
+```bash
+python -m pip install -e ".[openai]"
+python examples/three_agent_relay/run.py
+```
+
+This runs two real SDK handoffs with local fixture models. The coder writes a
+module and passes five behavior checks; the reviewer receives the inherited
+decisions plus new work and tool results, then independently checks the API and
+all eight input combinations. See the [relay example](examples/three_agent_relay/README.md).
 
 ## Twenty-task real-provider checkpoint
 
@@ -88,6 +101,15 @@ in the
 
 This is one trial per task through a user-authorized compatible gateway. It is
 a product checkpoint rather than a statistically stable cross-model result.
+The result notes also disclose a summary preparation output that answered the
+task instead of summarizing its state. This historical run predates the current
+summary prompt boundary and compact packet rendering; its recorded values stay
+unchanged.
+
+Separately, `0.3.0a3` losslessly re-renders those 20 saved packets from 8,177 to
+6,773 estimated handoff tokens, a 17.2% reduction. This is an offline comparison
+of the same typed state. It does not measure provider-token or billing savings,
+and no provider calls or success checks were rerun for that comparison.
 
 ## Why
 
@@ -101,21 +123,23 @@ remains. The output is a typed packet that another agent can consume directly.
 
 ## Install
 
-The [`0.3.0a2` GitHub prerelease](https://github.com/LikkIui/handoff-sieve/releases/tag/v0.3.0a2)
-is available. PyPI publication is paused while account setup is completed.
-Install the published package directly:
+Install the [`0.3.0a3` GitHub prerelease](https://github.com/LikkIui/handoff-sieve/releases/tag/v0.3.0a3)
+directly. PyPI publication remains paused while account setup is completed:
 
 ```bash
-python -m pip install "https://github.com/LikkIui/handoff-sieve/releases/download/v0.3.0a2/handoff_sieve-0.3.0a2-py3-none-any.whl"
+python -m pip install "https://github.com/LikkIui/handoff-sieve/releases/download/v0.3.0a3/handoff_sieve-0.3.0a3-py3-none-any.whl"
 ```
 
-The demos above are in the GitHub checkout. For development, run
+The demos above are in the GitHub checkout at `v0.3.0a3`, not in the wheel.
+For development, run
 `python -m pip install -e ".[dev]"` followed by `python -m pytest` there.
 Tests and offline demos do not require credentials.
 
-The checkout and release are `0.3.0a2`. The live SDK contract filter, missing-state
-diagnostics, and budget feedback are included. The older `0.3.0a1` release is
-still available with its original files.
+The checkout and release are `0.3.0a3`, including continuous handoffs, compact
+packet rendering, explicit current-state preparation, and the three-agent relay.
+`0.3.0a2` introduced the live SDK contract filter, missing-state diagnostics,
+and budget feedback. The older `0.3.0a2` and `0.3.0a1` release files remain
+unchanged. See the [migration notes](docs/migration.md) for wire-format changes.
 
 Token counts use an explicitly labelled UTF-8 estimate by default. Optional
 model-aware text counting is available with the `tiktoken` extra and
@@ -159,6 +183,27 @@ print(result.source_tokens, "->", result.packet_tokens)
 print(packet.pending_work)
 receiver_input = packet.to_receiver_text()
 ```
+
+When your application supplies explicit state identities, call
+`prepare_sender_state(sender_state, task_id="auth")` before compilation.
+It keeps messages and artifacts tagged with `metadata.task_id="auth"` plus
+untagged shared state, and removes exact public duplicates before budgeting.
+For already classified messages, the latest matching `metadata.state_key`
+replaces earlier state in the same task and section; a completed-work entry
+closes an earlier pending-work entry with that key. Later pending work can
+reopen it. Unlabelled old decisions and TODOs are not guessed away. For example:
+
+```python
+from handoff_sieve import prepare_sender_state
+
+prepared = prepare_sender_state(sender_state, task_id="auth")
+result = compile_history(prepared, contract)
+```
+
+The helper returns an independent copy. Task IDs and state keys must be
+nonblank strings. Packet JSON omits item defaults; parse it with
+`HandoffPacket.model_validate_json(receiver_input)` to restore the full typed
+model instead of assuming every default field is present in the wire text.
 
 `compile_history()` recognizes a deliberately small set of inspectable local
 signals: headings such as `Decision:`, `TODO:`, and `Failed attempt:`, their
@@ -350,7 +395,7 @@ evidence for the product's downstream-success claim.
 | Audited failure cases | 5/5 |
 | Audit completeness | 100.0% |
 | Estimated tokens | 903 original → 556 transmitted; 283 summarizer; 64 net saved |
-| Pipeline latency | p50 3.013 ms; p95 4.121 ms on the generating machine |
+| Pipeline latency | p50 2.703 ms; p95 5.842 ms on the generating machine |
 <!-- benchmark-results:end -->
 
 </details>

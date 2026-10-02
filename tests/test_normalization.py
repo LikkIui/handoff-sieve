@@ -244,8 +244,201 @@ def test_multisection_split_does_not_discard_unlabelled_preamble() -> None:
             messages=[Message(content="An unlabelled note.\nDecision: X\nTODO: Y")],
         )
     )
-    assert len(normalized.envelope.messages) == 1
+    assert [message.kind for message in normalized.envelope.messages] == [
+        "message",
+        "decisions",
+        "pending_work",
+    ]
+    assert normalized.envelope.messages[0].content == "An unlabelled note."
+    assert normalized.envelope.messages[1].content == "X"
+    assert normalized.envelope.messages[2].content == "Y"
+    assert normalized.report.total_messages == 1
+    assert normalized.report.classified_messages == 1
     assert normalized.report.unclassified_messages == 1
+    assert normalized.report.unclassified_message_indices == (0,)
+
+
+def test_structured_sections_preserve_values_and_unclassified_remainder() -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[
+            Message(
+                role="assistant",
+                content={
+                    "constraints": ["Keep cursors compatible."],
+                    "accepted decision": {"strategy": "keyset"},
+                    "pending_work": "Implement parser.",
+                    "artifacts": [{"name": "untrusted.py", "content": "example"}],
+                    "note": "Unclassified launch details.",
+                },
+                tags={"pagination"},
+                metadata={"task_id": "pagination", "_protected": True},
+            )
+        ],
+    )
+    source.messages[0]._mark_protected()
+    source.messages[0]._replace_internal({"adapter_state": "private"})
+    before = source.model_dump_json()
+    normalized = RuleBasedHistoryNormalizer().normalize(source)
+    messages = normalized.envelope.messages
+    assert [message.kind for message in messages] == [
+        "constraints",
+        "decisions",
+        "pending_work",
+        "message",
+    ]
+    assert messages[0].content == {"constraints": ["Keep cursors compatible."]}
+    assert messages[1].content == {"accepted decision": {"strategy": "keyset"}}
+    assert messages[2].content == {"pending_work": "Implement parser."}
+    assert messages[3].content == {
+        "artifacts": [{"name": "untrusted.py", "content": "example"}],
+        "note": "Unclassified launch details.",
+    }
+    assert all(message.role == "assistant" for message in messages)
+    assert all(message.tags == {"pagination"} for message in messages)
+    assert all(message.metadata == source.messages[0].metadata for message in messages)
+    assert all(not message.protected and message.internal == {} for message in messages)
+    assert normalized.envelope.artifacts == []
+    assert normalized.report.rule_counts == {"structured_key_sections": 1}
+    assert normalized.report.classified_messages == 1
+    assert normalized.report.unclassified_messages == 1
+    assert normalized.report.unclassified_message_indices == (0,)
+    messages[0].content["constraints"].append("Copied only.")
+    assert source.model_dump_json() == before
+
+
+def test_compile_history_accepts_a_multi_section_state_dictionary() -> None:
+    result = compile_history(
+        HandoffEnvelope(
+            sender="planner",
+            receiver="executor",
+            messages=[
+                Message(
+                    content={
+                        "constraints": "Keep existing cursors.",
+                        "decisions": "Use composite cursors.",
+                        "pending_work": ["Implement", "Test"],
+                    }
+                )
+            ],
+        ),
+        ReceiverContract(
+            goal="Implement pagination",
+            required=("constraints", "decisions", "pending_work"),
+            max_tokens=800,
+        ),
+    )
+    assert result.packet.pending_work[0].content == {
+        "pending_work": ["Implement", "Test"]
+    }
+    assert result.normalization.classified_messages == 1
+    assert result.normalization.unclassified_messages == 0
+
+
+@pytest.mark.parametrize(
+    "hint",
+    [{"kind": "evidence"}, {"tags": {"evidence"}}, {"role": "tool"}],
+)
+def test_structured_sections_respect_existing_classification(hint: dict) -> None:
+    content = {"decisions": "Quoted choice", "pending_work": "Quoted task"}
+    normalized = RuleBasedHistoryNormalizer().normalize(
+        HandoffEnvelope(
+            sender="researcher",
+            receiver="reviewer",
+            messages=[Message(content=content, **hint)],
+        )
+    )
+    assert len(normalized.envelope.messages) == 1
+    assert normalized.envelope.messages[0].content == content
+    assert normalized.envelope.messages[0].kind == (
+        "tool_results" if hint.get("role") == "tool" else hint.get("kind", "message")
+    )
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["## Decision:", "**Decision:**", "**Decision**:", "- **Decision:**"],
+)
+def test_markdown_section_labels_with_preamble_compile(label: str) -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[
+            Message(
+                content=(
+                    f"Here is the current state.\n{label}\nUse composite cursors.\n"
+                    "### TODO: Implement the parser."
+                )
+            )
+        ],
+    )
+    result = compile_history(
+        source,
+        ReceiverContract(
+            goal="Implement pagination",
+            required=("decisions", "pending_work"),
+            max_tokens=800,
+        ),
+    )
+    assert result.packet.decisions[0].content == "Use composite cursors."
+    assert result.packet.pending_work[0].content == "Implement the parser."
+    assert result.normalization.unclassified_message_indices == (0,)
+    assert "Here is the current state" not in result.packet.to_receiver_text()
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"decisions": "Use cursors", "pending_work": "Implement"}',
+        "```text\nDecision: A quoted example\nTODO: Another example\n```",
+        "~~~~text\n### Decision: A quoted example\n~~~\nTODO: Still quoted\n~~~~",
+        "**Decision: Unbalanced bold label",
+        "**Decision:\n```text\nTODO: Quoted task\n```\n**",
+        "**Decision: A whole bold statement**",
+        "We considered Decision: A, but accepted nothing.",
+        "Decision:",
+    ],
+)
+def test_normalizer_does_not_promote_ambiguous_or_quoted_content(content: str) -> None:
+    normalized = RuleBasedHistoryNormalizer().normalize(
+        HandoffEnvelope(
+            sender="researcher",
+            receiver="coder",
+            messages=[Message(content=content)],
+        )
+    )
+    assert normalized.envelope.messages[0].content == content
+    assert normalized.envelope.messages[0].kind == "message"
+    assert normalized.report.classified_messages == 0
+    assert normalized.report.unclassified_message_indices == (0,)
+
+
+def test_preamble_and_quoted_labels_keep_original_diagnostic_indices() -> None:
+    source = HandoffEnvelope(
+        sender="researcher",
+        receiver="coder",
+        messages=[
+            Message(content="private note\nDecision: Use cursors."),
+            Message(content="```text\nTODO: Example task\n```"),
+            Message(content={"constraints": "Preserve API", "evidence": "Plan"}),
+        ],
+    )
+    with pytest.raises(ContractError) as captured:
+        compile_history(
+            source,
+            ReceiverContract(
+                goal="Implement",
+                required=("decisions", "constraints", "pending_work"),
+                max_tokens=800,
+            ),
+        )
+    error = captured.value
+    assert error.diagnostics is not None and error.normalization is not None
+    assert error.diagnostics.missing_sections == ("pending_work",)
+    assert error.diagnostics.unclassified_message_indices == (0, 1)
+    assert error.normalization.unclassified_message_indices == (0, 1)
+    assert "private note" not in str(error)
 
 
 def test_missing_state_diagnostics_use_original_indices_after_section_expansion() -> (
