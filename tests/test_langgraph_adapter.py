@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 from typing import Annotated, Any, TypedDict
 
 import pytest
@@ -185,3 +189,22 @@ def test_langgraph_handoff_validates_state_keys_and_destination() -> None:
     handoff = LangGraphHandoff(packet)
     with pytest.raises(ValueError, match="goto"):
         handoff.command("")
+
+
+def test_langgraph_example_runs_with_compact_packet_and_full_state() -> None:
+    root = Path(__file__).resolve().parents[1]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(root / "src")
+    completed = subprocess.run(
+        [sys.executable, str(root / "examples/langgraph_handoff/run.py")],
+        cwd=root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "Receiver messages: 1" in completed.stdout
+    assert "received 1 pending item and 1 paired tool result" in completed.stdout
+    assert "Result: real LangGraph handoff completed" in completed.stdout

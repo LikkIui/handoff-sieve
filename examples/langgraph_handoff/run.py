@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph, add_messages
 
-from handoff_sieve import ReceiverContract
+from handoff_sieve import HandoffPacket, ReceiverContract
 from handoff_sieve.adapters import LangGraphHandoff, compile_langgraph_state
 
 
@@ -47,12 +46,12 @@ def coder(state: State) -> dict[str, str]:
     assert len(state["messages"]) == 1
     receiver_view = state["messages"][0].content
     assert isinstance(receiver_view, str)
-    packet = json.loads(receiver_view)
-    assert packet == state["handoff_packet"]
+    packet = HandoffPacket.model_validate_json(receiver_view)
+    assert packet == HandoffPacket.model_validate(state["handoff_packet"])
     return {
         "receiver_output": (
-            f"received {len(packet['pending_work'])} pending item and "
-            f"{len(packet['tool_results'])} paired tool result"
+            f"received {len(packet.pending_work)} pending item and "
+            f"{len(packet.tool_results)} paired tool result"
         )
     }
 
