@@ -31,6 +31,13 @@ unchanged; PyPI remains paused.
   semantic coverage. Existing contracts with empty needs behave as before.
 - Selector requests omit host-only source coordinates and empty metadata.
   The application retains the full original catalog for reconstruction.
+- The OpenAI selector uses bounded catalog indices and records need coverage
+  on each selected item. Coverage is derived locally, so it cannot reference
+  an item missing from the selected packet. Public plans retain original IDs.
+- Public-data development now uses a fixed SWE-bench Verified snapshot and
+  disjoint 30-task development / 200-task held-out / 270-task reserve partitions.
+  Upstream Linux grading verifies reference-fix and unchanged-source controls.
+  Real-model source-editing takeovers remain distinct from synthetic fixtures.
 
 See [model handoff](docs/model-handoff.md), [code references](docs/design-references-2026-10-10.md)
 and [migration notes](docs/migration.md). Smaller receiver context does not

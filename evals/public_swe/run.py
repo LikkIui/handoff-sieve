@@ -15,6 +15,7 @@ from typing import Any, cast
 
 from handoff_sieve import (
     ApproxTokenCounter,
+    ContractError,
     HandoffEnvelope,
     Message,
     ReceiverContract,
@@ -131,6 +132,10 @@ async def agent(
             if researcher
             else "\nImplement the issue in the current checkout."
         )
+        instructions += (
+            f"\nSource-tool actions remaining: {steps - used_steps}. "
+            "Plan within this budget; reserve actions for necessary edits."
+        )
         if budget_exhausted:
             instructions += (
                 "\nTool budget exhausted. Use finish now. State what is actually "
@@ -198,7 +203,7 @@ async def agent(
     return {
         "events": events,
         "finished": finished,
-        "steps_exhausted": not finished,
+        "steps_exhausted": used_steps >= steps,
         "executed_tool_steps": used_steps,
         **recorder.usage(),
     }
@@ -379,6 +384,8 @@ async def run_task(
                     row.update(
                         status="failed_before_grading", error_type=type(error).__name__
                     )
+                    if isinstance(error, ContractError):
+                        row["error_message"] = str(error)
                 row.update(calls.usage())
                 report["conditions"].append(row)
                 save(report_path, report)
@@ -435,6 +442,8 @@ async def run(args: argparse.Namespace) -> None:
         "token_counter": "built-in estimate",
         "automatic_retries": 0,
         "agent_protocol": "sequential native Responses function calls",
+        "selector_protocol": "bounded catalog indices with per-selection needs",
+        "implementation_revision": git(Path.cwd(), "rev-parse", "HEAD").strip(),
         "split": "development",
         "success_results": "pending upstream grading",
     }

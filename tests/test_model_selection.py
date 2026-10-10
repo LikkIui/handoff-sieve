@@ -202,14 +202,24 @@ def test_selector_input_is_an_isolated_copy():
 
 
 def test_openai_selector_uses_schema_and_reports_actual_usage():
-    selected = plan(("m0.1", "constraints", True))
+    selected = {
+        "selections": [
+            {
+                "unit_index": 1,
+                "section": "constraints",
+                "essential": True,
+                "need_indices": [],
+            }
+        ],
+        "missing_needs": [],
+    }
 
     class Responses:
         async def create(self, **kwargs):
             self.kwargs = kwargs
             return SimpleNamespace(
                 status="completed",
-                output_text=selected.model_dump_json(),
+                output_text=json.dumps(selected),
                 id="response-1",
                 usage=SimpleNamespace(
                     input_tokens=50, output_tokens=20, total_tokens=70
@@ -224,6 +234,76 @@ def test_openai_selector_uses_schema_and_reports_actual_usage():
     assert responses.kwargs["store"] is False
     assert responses.kwargs["text"]["format"]["strict"] is True
     assert result.selector_usage.total_tokens == 70
+
+
+def test_indexed_selector_coverage_can_only_reference_selected_original_units():
+    from handoff_sieve.adapters.openai_selector import (
+        _selection_plan,
+        _selector_payload,
+    )
+    from handoff_sieve.model_selection import SelectionRequest
+
+    source = state()
+    request = SelectionRequest(
+        receiver="coder",
+        contract=contract(needs=("API compatibility", "Accepted implementation")),
+        units=source_units(source, HandoffPipeline()),
+    )
+    payload, schema = _selector_payload(request)
+    assert json.loads(payload)["units"][1]["unit_index"] == 1
+    assert "source_id" not in json.loads(payload)["units"][1]
+    props = schema["$defs"]["_IndexedSelection"]["properties"]
+    assert props["unit_index"]["maximum"] == len(request.units) - 1
+    assert props["need_indices"]["items"]["maximum"] == 1
+    selected = _selection_plan(
+        json.dumps(
+            {
+                "selections": [
+                    {
+                        "unit_index": 1,
+                        "section": "constraints",
+                        "essential": False,
+                        "need_indices": [0, 1],
+                    }
+                ],
+                "missing_needs": [],
+            }
+        ),
+        request,
+    )
+    result = compile_with(selected, source=source, receiver=request.contract)
+    assert result.selection.selected_source_ids == ["m0.1"]
+    assert [item.source_ids for item in selected.coverage] == [["m0.1"], ["m0.1"]]
+    assert result.packet.constraints[0].content == "Keep the API unchanged.\n"
+
+
+@pytest.mark.parametrize(
+    "indices, needs",
+    [([4], [[]]), ([1, 1], [[], []]), ([1], [[1]]), ([1], [[0, 0]])],
+)
+def test_indexed_selector_rejects_invalid_references_locally(indices, needs):
+    from handoff_sieve.adapters.openai_selector import _selection_plan
+    from handoff_sieve.model_selection import SelectionRequest
+
+    request = SelectionRequest(
+        receiver="coder",
+        contract=contract(needs=("Compatibility",)),
+        units=source_units(state(), HandoffPipeline()),
+    )
+    response = {
+        "selections": [
+            {
+                "unit_index": index,
+                "section": "constraints",
+                "essential": True,
+                "need_indices": coverage,
+            }
+            for index, coverage in zip(indices, needs, strict=True)
+        ],
+        "missing_needs": [],
+    }
+    with pytest.raises(ContractError):
+        _selection_plan(json.dumps(response), request)
 
 
 def test_sdk_model_filter_sends_only_packet_and_keeps_original_input():

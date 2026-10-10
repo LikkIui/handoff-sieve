@@ -48,7 +48,10 @@ extra. No compression model, GPU, vector database, or extra service is needed.
    from the selector payload; nonempty task hints and metadata remain visible.
 3. One selector call returns source IDs, categories, essential flags, ranked
    optional selections, and source references covering each need. It does not
-   generate the task facts or edit the sender's code.
+   generate the task facts or edit the sender's code. The OpenAI backend's
+   wire format uses bounded catalog indices and places need indices on each
+   selected item; the application maps them to original source IDs and derives
+   coverage. This avoids separately citing evidence absent from the selection.
 4. The application validates the plan, reconstructs content from its original
    snapshot, preserves essential/need-covered items, and fits optional items
    into the actual rendered packet budget. Unknown IDs, missing coverage,
