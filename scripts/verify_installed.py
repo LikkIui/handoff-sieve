@@ -14,6 +14,7 @@ from handoff_sieve import (
     ReceiverContract,
     compile_handoff,
     compile_history,
+    compile_model_handoff,
 )
 from handoff_sieve.policies import (
     BudgetPolicy,
@@ -39,6 +40,7 @@ def verify_core(
     installed_version = metadata.version(distribution)
     assert installed_version == expected_version
     assert handoff_sieve.__version__ == expected_version
+    assert callable(compile_model_handoff)
 
     package_path = Path(handoff_sieve.__file__).resolve()
     source_root = forbid_source_root.resolve()
@@ -113,7 +115,15 @@ def verify_openai_adapter() -> None:
     from agents.handoffs import HandoffInputData
     from agents.items import InputItem
 
-    from handoff_sieve.adapters import OpenAIHandoffFilter, OpenAIHandoffPacketFilter
+    from handoff_sieve.adapters import (
+        OpenAIHandoffFilter,
+        OpenAIHandoffPacketFilter,
+        OpenAIHandoffSelector,
+        OpenAIModelHandoffFilter,
+    )
+
+    assert callable(OpenAIHandoffSelector)
+    assert callable(OpenAIModelHandoffFilter)
 
     agent = Agent(name="artifact-smoke-agent")
     input_item = InputItem(

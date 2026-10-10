@@ -22,6 +22,55 @@ Receiver-specific HandoffPacket
 Reduce handoff tokens, preserve critical state, and avoid unnecessary
 information disclosure.
 
+## New: model-assisted handoff (`0.4.0a1` development)
+
+For ordinary mixed history, a model can now select context by the receiver's
+actual goal and natural-language needs. The application builds the packet by
+copying the selected **original source spans**; the selector does not rewrite
+task facts or code. Essential content stays pinned while optional context fits
+the rendered packet budget.
+
+```python
+result = await compile_model_handoff(
+    sender_state,
+    ReceiverContract(
+        goal="Fix the authentication module",
+        needs=("Latest accepted policy", "Failed approach", "Current source file"),
+        required=("constraints", "artifacts"),
+        preferred=("decisions", "failed_attempts", "pending_work"),
+        max_tokens=1300,
+    ),
+    selector=OpenAIHandoffSelector(client, model="YOUR_MODEL"),
+)
+```
+
+Try the real-model example from the current `main` checkout:
+
+```bash
+python -m pip install -e ".[openai]"
+python examples/receiver_goals/demo.py --model YOUR_MODEL --output outputs/receiver-goals
+python examples/receiver_goals/sdk_handoff.py --model YOUR_MODEL --output outputs/receiver-sdk
+```
+
+Use `OPENAI_API_KEY` / `OPENAI_BASE_URL`, or enter the credential at the hidden
+prompt. [Complete usage and SDK integration](docs/model-handoff.md) explain the
+new API. The model call adds preparation cost; source references and budgets
+are checked locally, while semantic sufficiency still needs downstream testing.
+The existing deterministic path remains available without model calls.
+
+[Inspected external code and adopted ideas](docs/design-references-2026-10-10.md)
+cover agent-handoff, agent-handoff-protocol, LLMLingua, RTK and handoff context
+engineering. This development version is not yet the published `0.3.0a3` release.
+
+The [live development results](evals/takeover/results/2026-10-10-model-handoff/README.md)
+retain **43 real requests**, both receiver takeovers, an actual SDK handoff and
+three executable pilots. The two-receiver run completed 2/2 takeovers with the
+new path and 2/2 with the strong summary; estimated receiver context fell from
+about 4,981 to 415 tokens, but the new path used more total provider tokens.
+The pilot review initially failed local selection validation; its separately
+recorded follow-up passed. These are small synthetic diagnostics, not a general
+success-rate claim.
+
 ## Try it offline
 
 Requires Python 3.10 or later. Clone the project and run the demo; no API key
@@ -162,13 +211,15 @@ directly. PyPI publication remains paused while account setup is completed:
 python -m pip install "https://github.com/LikkIui/handoff-sieve/releases/download/v0.3.0a3/handoff_sieve-0.3.0a3-py3-none-any.whl"
 ```
 
-The demos above are in the GitHub checkout at `v0.3.0a3`, not in the wheel.
+The offline demos are in the GitHub checkout at `v0.3.0a3`, not in the wheel.
+The new model examples require the current `main` checkout.
 For development, run
 `python -m pip install -e ".[dev]"` followed by `python -m pytest` there.
 Tests and offline demos do not require credentials.
 
-The checkout and release are `0.3.0a3`, including continuous handoffs, compact
+The published release is `0.3.0a3`, including continuous handoffs, compact
 packet rendering, explicit current-state preparation, and the three-agent relay.
+Current `main` is development `0.4.0a1` with opt-in model selection.
 `0.3.0a2` introduced the live SDK contract filter, missing-state diagnostics,
 and budget feedback. The older `0.3.0a2` and `0.3.0a1` release files remain
 unchanged. See the [migration notes](docs/migration.md) for wire-format changes.
@@ -454,6 +505,8 @@ References: [Configuration](docs/configuration.md), [audit](docs/audit.md),
   minimal sufficient handoff the center of the API and demos.
 - **v0.3 — Prove It:** completed a 20-task comparison of full history, naive
   summary, and HandoffSieve, then added the LangGraph adapter.
+- **Current v0.4 development:** goal-aware original-source selection from
+  ordinary history, natural-language needs, and real-model takeover comparisons.
 
 See the focused [iteration roadmap](docs/iteration-roadmap.md). Additional
 frameworks and protocol work wait for real user demand.

@@ -142,6 +142,15 @@ class ReceiverContract(BaseModel):
     required: tuple[SectionName, ...] = Field(default_factory=tuple)
     preferred: tuple[SectionName, ...] = Field(default_factory=tuple)
     max_tokens: int = Field(gt=0)
+    needs: tuple[str, ...] = Field(default_factory=tuple)
+
+    @field_validator("needs")
+    @classmethod
+    def _needs_must_be_explicit(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        cleaned = tuple(value.strip() for value in values)
+        if any(not value for value in cleaned) or len(set(cleaned)) != len(cleaned):
+            raise ValueError("needs must contain distinct, nonblank descriptions")
+        return cleaned
 
     @field_validator("goal")
     @classmethod
@@ -450,6 +459,11 @@ def compile_handoff(
     """
 
     active_pipeline = pipeline or HandoffPipeline()
+    if contract.needs:
+        raise ContractError(
+            "Natural-language needs require compile_model_handoff; "
+            "the deterministic compiler cannot validate semantic coverage."
+        )
     counter = active_pipeline.token_counter
     source = HandoffEnvelope.model_validate(envelope.model_dump(mode="python"))
     source_tokens = counter.count_envelope(source)

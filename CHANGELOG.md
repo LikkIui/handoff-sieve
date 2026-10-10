@@ -7,7 +7,34 @@ changelog and migration notes explain them.
 
 ## [Unreleased]
 
-No unreleased changes.
+Development version: `0.4.0a1`. The published `0.3.0a3` GitHub prerelease is
+unchanged; PyPI remains paused.
+
+### Added
+
+- `compile_model_handoff()` selects original source spans from ordinary mixed
+  history according to a receiver's goal and natural-language `needs`.
+- Ranked, structured selection plans, source references for need coverage,
+  essential-content protection, final rendered packet budgeting and explicit
+  errors for invalid or insufficient plans. Task facts are copied locally;
+  the selector cannot rewrite them. Semantic sufficiency remains a model judgment.
+- `OpenAIHandoffSelector` uses one explicit Responses structured-output call;
+  `OpenAIModelHandoffFilter` applies it at the existing SDK handoff boundary.
+- Real-model two-receiver and SDK examples, including executable code checks,
+  request/response recording without authentication headers, and comparison
+  against a receiver-aware model summary. Preparation usage is included.
+
+### Changed
+
+- New optional `ReceiverContract.needs` is supported by the model path. The
+  deterministic path rejects nonempty needs instead of claiming to validate
+  semantic coverage. Existing contracts with empty needs behave as before.
+- Selector requests omit host-only source coordinates and empty metadata.
+  The application retains the full original catalog for reconstruction.
+
+See [model handoff](docs/model-handoff.md), [code references](docs/design-references-2026-10-10.md)
+and [migration notes](docs/migration.md). Smaller receiver context does not
+establish lower total provider cost or superiority to model summarization.
 
 ## [0.3.0a3] - 2026-10-02
 

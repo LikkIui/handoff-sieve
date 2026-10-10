@@ -1,0 +1,457 @@
+[
+  {
+    "task": "rc01_composite_cursor",
+    "condition": "full_history",
+    "context": "{\"artifacts\":[{\"content\":{\"cursor_codec\":\"opaque URL-safe encoding owned by encode_cursor/decode_cursor\",\"implementation_file\":\"src/task_app/pagination.py\",\"public_api\":\"page_after(rows, cursor, limit)\",\"row_fields\":[\"created_at\",\"id\",\"payload\"],\"test_file\":\"tests/test_pagination.py\"},\"media_type\":\"application/json\",\"metadata\":{},\"name\":\"pagination-workspace-map\"}],\"messages\":[{\"content\":[\"Offset pagination is familiar to users and easy to demonstrate, but these notes concern a future admin search screen rather than the activity-feed takeover task.\",\"One database vendor recommends approximate row counts for very deep pages. Row counts are outside the accepted activity-feed design and do not affect cursor construction.\",\"A hosted search product offers snapshot pagination with a proprietary continuation token. The project is not adopting that service.\",\"An early sketch proposed a created_at-only cursor because the first sample happened to contain unique timestamps. That sketch was explicitly rejected after tied rows were found.\",\"Another discarded sketch encoded page number and page size in the cursor. It cannot remain stable while rows are inserted and is not the selected approach.\",\"Index tuning for descending feeds was discussed for a later milestone. This task keeps the existing ascending public order.\",\"A long comparison of base32 and base64 readability produced no product requirement. The existing cursor helper already owns opaque encoding.\",\"The analytics team may eventually request filtering by actor type. No filter is part of this task.\",\"Search snippets discussed server-side cursors tied to database connections. The current API is stateless and will not keep database sessions open.\",\"A meeting also covered cache invalidation, feed retention, and mobile prefetch. None changes the accepted keyset ordering for this handoff.\"],\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":[\"Query-plan capture 01 completed against an unrelated million-row synthetic table; the output was archived for future index work.\",\"Query-plan capture 02 repeated the same offset query with a warm cache and produced a shorter runtime.\",\"Formatter run completed with no changes in the documentation package.\",\"A crawler fetched six pagination articles and recorded titles, authors, navigation text, cookie banners, and footer links.\",\"The local database probe printed connection setup, transaction begin, transaction rollback, and teardown lines for every sample.\",\"A benchmark script compared page sizes 25, 50, and 100 for a different endpoint that has no timestamp ties.\",\"Static analysis reported no findings in the current stub because the missing branch is represented by NotImplementedError.\",\"A dependency audit listed optional database drivers that are not installed by this package.\",\"The test collector discovered unrelated account, billing, export, and notification suites.\",\"An exploratory log repeated the phrase page fetched successfully for each of eighty pages; it contains no acceptance decision.\"],\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":[\"The product meeting spent most of its time on feed naming, empty-state copy, skeleton loading, and the placement of a refresh button.\",\"A designer asked whether the cursor could be visible in the URL. The answer was deferred and no URL work belongs to this task.\",\"The release discussion considered screenshots, changelog wording, and a launch post for several unrelated features.\",\"A later roadmap item may add reverse navigation. This takeover implements forward pagination only.\",\"Ownership of the mobile feed was reassigned, but the Python pagination module and its public API remain unchanged.\",\"Observability labels, dashboard colors, and alert thresholds were recorded for later planning and carry no coding requirement here.\"],\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"Keep page_after(rows, cursor, limit) and the existing opaque cursor codec public API. Sort ascending. A malformed cursor must raise ValueError. Do not add a dependency or change the input rows.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"The accepted keyset is the lexicographically ordered pair (created_at, id). A decoded cursor identifies the last returned pair, and the next page must include only rows whose pair is strictly greater than it.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"The fixed fixture has three records at 2026-04-12T09:00:00Z with ids evt-002, evt-004, and evt-009. The rejected created_at-only implementation skips evt-004 and evt-009 when a page ends at evt-002.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"ActivityRow, encode_cursor, decode_cursor, and the page_after stub already exist. Public tests cover unique timestamps and an empty final page, but not timestamp ties or malformed cursors.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"A created_at-only predicate was tried and rejected because rows sharing the boundary timestamp disappeared. Offset plus page number was also rejected because concurrent inserts change later pages.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"Implement composite cursor encode/decode and the exclusive lexicographic page_after selection. Cover timestamp ties, final-page behavior, and malformed cursor input.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"Baseline public suite: 6 passed. Manual tied-timestamp probe: expected ids evt-002, evt-004, evt-009 across the boundary; current stub has no result.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]}],\"metadata\":{\"catalog_id\":\"RC-01\",\"fixture_status\":\"not_run\"},\"receiver\":\"coder\",\"sender\":\"researcher\"}",
+    "output": "{\"pagination_py\":\"\\\"\\\"\\\"Activity-feed pagination API to be completed by the receiving agent.\\\"\\\"\\\"\\n\\nfrom __future__ import annotations\\n\\nimport base64\\nimport binascii\\nimport json\\nimport re\\nfrom collections.abc import Sequence\\nfrom dataclasses import dataclass\\nfrom datetime import datetime\\nfrom typing import Any\\n\\n\\n@dataclass(frozen=True, slots=True)\\nclass ActivityRow:\\n    \\\"\\\"\\\"One activity-feed row.\\\"\\\"\\\"\\n\\n    created_at: datetime\\n    id: str\\n    payload: Any = None\\n\\n\\ndef encode_cursor(row: ActivityRow) -> str:\\n    \\\"\\\"\\\"Return an opaque cursor representing ``row``'s pagination key.\\\"\\\"\\\"\\n\\n    value = json.dumps(\\n        [row.created_at.isoformat(), row.id],\\n        ensure_ascii=True,\\n        separators=(\\\",\\\", \\\":\\\"),\\n    ).encode(\\\"ascii\\\")\\n    return base64.urlsafe_b64encode(value).decode(\\\"ascii\\\").rstrip(\\\"=\\\")\\n\\n\\ndef decode_cursor(cursor: str) -> tuple[datetime, str]:\\n    \\\"\\\"\\\"Decode a cursor or raise ``ValueError`` when it is malformed.\\\"\\\"\\\"\\n\\n    if not isinstance(cursor, str) or not cursor or not re.fullmatch(\\n        r\\\"[A-Za-z0-9_-]+\\\", cursor\\n    ):\\n        raise ValueError(\\\"malformed cursor\\\")\\n\\n    try:\\n        padding = \\\"=\\\" * (-len(cursor) % 4)\\n        raw = base64.b64decode(\\n            cursor + padding,\\n            altchars=b\\\"-_\\\",\\n            validate=True,\\n        )\\n        value = json.loads(raw.decode(\\\"ascii\\\"))\\n        if (\\n            not isinstance(value, list)\\n            or len(value) != 2\\n            or not isinstance(value[0], str)\\n            or not isinstance(value[1], str)\\n        ):\\n            raise ValueError\\n        created_at = datetime.fromisoformat(value[0])\\n    except (ValueError, TypeError, UnicodeError, json.JSONDecodeError,\\n            binascii.Error, OverflowError):\\n        raise ValueError(\\\"malformed cursor\\\") from None\\n\\n    return created_at, value[1]\\n\\n\\ndef page_after(\\n    rows: Sequence[ActivityRow],\\n    cursor: str | None,\\n    limit: int,\\n) -> tuple[list[ActivityRow], str | None]:\\n    \\\"\\\"\\\"Return the next ascending page and a cursor when more rows remain.\\n\\n    The returned cursor is ``None`` on the final page. The function must not\\n    mutate ``rows`` or any row payload. A malformed non-``None`` cursor raises\\n    ``ValueError``.\\n    \\\"\\\"\\\"\\n\\n    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:\\n        raise ValueError(\\\"limit must be a positive integer\\\")\\n\\n    boundary = decode_cursor(cursor) if cursor is not None else None\\n    ordered = sorted(rows, key=lambda row: (row.created_at, row.id))\\n    if boundary is not None:\\n        ordered = [\\n            row\\n            for row in ordered\\n            if (row.created_at, row.id) > boundary\\n        ]\\n\\n    page = ordered[:limit]\\n    if len(ordered) <= limit or not page:\\n        return page, None\\n    return page, encode_cursor(page[-1])\\n\"}",
+    "handoff_tokens": 1450,
+    "acceptance": {
+      "checks": [
+        {
+          "id": "cursor_round_trip",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "malformed_cursor",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "page_size_1",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "page_size_7",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "page_size_13",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "terminal_page",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "input_immutability",
+          "passed": true,
+          "detail": null
+        }
+      ],
+      "overall": true,
+      "error": null,
+      "derived_blocking_issue_ids": null
+    },
+    "model_calls": 1,
+    "available_provider_tokens": 7191
+  },
+  {
+    "task": "rc01_composite_cursor",
+    "condition": "receiver_aware_summary",
+    "context": "Receiver: coder  \nCatalog: RC-01\n\nGoal  \nImplement stable forward cursor pagination without skipping records that share a timestamp.\n\nAccepted constraints and public API  \n- Preserve `page_after(rows, cursor, limit)`.\n- Preserve existing public `encode_cursor` / `decode_cursor` opaque cursor codec API.\n- Keep input rows unchanged; row fields are `created_at`, `id`, and `payload`.\n- No new dependency.\n- Sort in ascending order.\n- Malformed cursors must raise `ValueError`.\n- API remains stateless; no database sessions or proprietary hosted-search pagination.\n- Forward pagination only; no reverse navigation or unrelated filtering.\n\nAccepted decisions  \n- Cursor boundary is the lexicographically ordered pair `(created_at, id)`.\n- A decoded cursor identifies the last returned pair.\n- The next page must select only rows whose pair is strictly greater than the cursor pair.\n- Existing opaque URL-safe encoding remains owned by `encode_cursor` / `decode_cursor`.\n- Public API and existing ascending order remain unchanged.\n\nEvidence  \n- Fixed fixture has three records at `2026-04-12T09:00:00Z`: `evt-002`, `evt-004`, `evt-009`.\n- When a page ends at `evt-002`, the expected continuation includes `evt-004` and `evt-009`; the created_at-only implementation skipped them.\n- Baseline public suite: 6 passed.\n- Manual tied-timestamp probe expected IDs `evt-002`, `evt-004`, `evt-009` across the boundary; current stub produced no result.\n- Public tests currently cover unique timestamps and an empty final page, but not ties or malformed cursors.\n\nCompleted work / current state  \n- `ActivityRow`, `encode_cursor`, `decode_cursor`, and the `page_after` stub already exist.\n- Workspace and test locations are identified below.\n- No accepted implementation of composite cursor selection is currently present.\n- Fixture status: `not_run`.\n\nFailed approaches to avoid  \n- `created_at`-only predicate: rejected because equal-timestamp rows disappear.\n- Offset plus page number: rejected because concurrent inserts shift later pages.\n- Do not use page number/page size in the cursor, database-session cursors, or a hosted search continuation token.\n\nPending work  \n- Implement composite cursor encode/decode behavior using the existing codec/API.\n- Implement exclusive lexicographic `page_after` selection on `(created_at, id)`.\n- Add or update coverage for:\n  - timestamp ties across page boundaries,\n  - final-page and empty-final-page behavior,\n  - malformed cursor input raising `ValueError`.\n- Run the relevant test suite and tied-timestamp probe; record results.\n\nRelevant artifacts  \n- Artifact: `pagination-workspace-map`\n- Implementation: `src/task_app/pagination.py`\n- Tests: `tests/test_pagination.py`\n- Public API: `page_after(rows, cursor, limit)`\n- Cursor codec: opaque URL-safe encoding via `encode_cursor` / `decode_cursor`",
+    "output": "{\"pagination_py\":\"\\\"\\\"\\\"Activity-feed pagination API to be completed by the receiving agent.\\\"\\\"\\\"\\n\\nfrom __future__ import annotations\\n\\nimport base64\\nimport binascii\\nimport json\\nimport re\\nfrom collections.abc import Sequence\\nfrom dataclasses import dataclass\\nfrom datetime import datetime\\nfrom typing import Any\\n\\n\\n@dataclass(frozen=True, slots=True)\\nclass ActivityRow:\\n    \\\"\\\"\\\"One activity-feed row.\\\"\\\"\\\"\\n\\n    created_at: datetime\\n    id: str\\n    payload: Any = None\\n\\n\\n_CURSOR_RE = re.compile(r\\\"^[A-Za-z0-9_-]+={0,2}$\\\")\\n\\n\\ndef encode_cursor(row: ActivityRow) -> str:\\n    \\\"\\\"\\\"Return an opaque cursor representing ``row``'s pagination key.\\\"\\\"\\\"\\n\\n    value = json.dumps(\\n        {\\\"created_at\\\": row.created_at.isoformat(), \\\"id\\\": row.id},\\n        ensure_ascii=True,\\n        separators=(\\\",\\\", \\\":\\\"),\\n    ).encode(\\\"utf-8\\\")\\n    return base64.urlsafe_b64encode(value).decode(\\\"ascii\\\").rstrip(\\\"=\\\")\\n\\n\\ndef decode_cursor(cursor: str) -> tuple[datetime, str]:\\n    \\\"\\\"\\\"Decode a cursor or raise ``ValueError`` when it is malformed.\\\"\\\"\\\"\\n\\n    if not isinstance(cursor, str) or not cursor or not _CURSOR_RE.fullmatch(cursor):\\n        raise ValueError(\\\"malformed cursor\\\")\\n\\n    try:\\n        padding = \\\"=\\\" * (-len(cursor) % 4)\\n        decoded = base64.b64decode(\\n            (cursor + padding).encode(\\\"ascii\\\"),\\n            altchars=b\\\"-_\\\",\\n            validate=True,\\n        )\\n        value = json.loads(decoded.decode(\\\"utf-8\\\"))\\n    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError) as exc:\\n        raise ValueError(\\\"malformed cursor\\\") from exc\\n\\n    if not isinstance(value, dict) or set(value) != {\\\"created_at\\\", \\\"id\\\"}:\\n        raise ValueError(\\\"malformed cursor\\\")\\n    timestamp = value[\\\"created_at\\\"]\\n    row_id = value[\\\"id\\\"]\\n    if not isinstance(timestamp, str) or not isinstance(row_id, str):\\n        raise ValueError(\\\"malformed cursor\\\")\\n\\n    try:\\n        created_at = datetime.fromisoformat(timestamp)\\n    except (TypeError, ValueError) as exc:\\n        raise ValueError(\\\"malformed cursor\\\") from exc\\n    return created_at, row_id\\n\\n\\ndef page_after(\\n    rows: Sequence[ActivityRow],\\n    cursor: str | None,\\n    limit: int,\\n) -> tuple[list[ActivityRow], str | None]:\\n    \\\"\\\"\\\"Return the next ascending page and a cursor when more rows remain.\\n\\n    The returned cursor is ``None`` on the final page. The function must not\\n    mutate ``rows`` or any row payload. A malformed non-``None`` cursor raises\\n    ``ValueError``.\\n    \\\"\\\"\\\"\\n\\n    if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:\\n        raise ValueError(\\\"limit must be a positive integer\\\")\\n\\n    boundary = decode_cursor(cursor) if cursor is not None else None\\n    ordered = sorted(rows, key=lambda row: (row.created_at, row.id))\\n    if boundary is not None:\\n        ordered = [\\n            row\\n            for row in ordered\\n            if (row.created_at, row.id) > boundary\\n        ]\\n\\n    page = ordered[:limit]\\n    if len(ordered) <= limit:\\n        return page, None\\n    return page, encode_cursor(page[-1])\\n\"}",
+    "handoff_tokens": 709,
+    "acceptance": {
+      "checks": [
+        {
+          "id": "cursor_round_trip",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "malformed_cursor",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "page_size_1",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "page_size_7",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "page_size_13",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "terminal_page",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "input_immutability",
+          "passed": true,
+          "detail": null
+        }
+      ],
+      "overall": true,
+      "error": null,
+      "derived_blocking_issue_ids": null
+    },
+    "model_calls": 2,
+    "available_provider_tokens": 9427
+  },
+  {
+    "task": "rc01_composite_cursor",
+    "condition": "model_handoff",
+    "compilation": {
+      "packet": {
+        "sender": "researcher",
+        "receiver": "coder",
+        "goal": "Implement stable forward cursor pagination that does not skip records sharing a timestamp.",
+        "constraints": [
+          {
+            "role": "user",
+            "content": "Keep page_after(rows, cursor, limit) and the existing opaque cursor codec public API. Sort ascending. A malformed cursor must raise ValueError. Do not add a dependency or change the input rows.",
+            "kind": "constraints",
+            "tags": [],
+            "metadata": {
+              "handoff_sieve.source_id": "m3.0"
+            }
+          }
+        ],
+        "decisions": [
+          {
+            "role": "user",
+            "content": "The accepted keyset is the lexicographically ordered pair (created_at, id). A decoded cursor identifies the last returned pair, and the next page must include only rows whose pair is strictly greater than it.",
+            "kind": "decisions",
+            "tags": [],
+            "metadata": {
+              "handoff_sieve.source_id": "m4.0"
+            }
+          }
+        ],
+        "evidence": [
+          {
+            "role": "user",
+            "content": "The fixed fixture has three records at 2026-04-12T09:00:00Z with ids evt-002, evt-004, and evt-009. The rejected created_at-only implementation skips evt-004 and evt-009 when a page ends at evt-002.",
+            "kind": "evidence",
+            "tags": [],
+            "metadata": {
+              "handoff_sieve.source_id": "m5.0"
+            }
+          }
+        ],
+        "completed_work": [
+          {
+            "role": "user",
+            "content": "ActivityRow, encode_cursor, decode_cursor, and the page_after stub already exist. Public tests cover unique timestamps and an empty final page, but not timestamp ties or malformed cursors.",
+            "kind": "completed_work",
+            "tags": [],
+            "metadata": {
+              "handoff_sieve.source_id": "m6.0"
+            }
+          }
+        ],
+        "failed_attempts": [
+          {
+            "role": "user",
+            "content": "A created_at-only predicate was tried and rejected because rows sharing the boundary timestamp disappeared. Offset plus page number was also rejected because concurrent inserts change later pages.",
+            "kind": "failed_attempts",
+            "tags": [],
+            "metadata": {
+              "handoff_sieve.source_id": "m7.0"
+            }
+          }
+        ],
+        "pending_work": [
+          {
+            "role": "user",
+            "content": "Implement composite cursor encode/decode and the exclusive lexicographic page_after selection. Cover timestamp ties, final-page behavior, and malformed cursor input.",
+            "kind": "pending_work",
+            "tags": [],
+            "metadata": {
+              "handoff_sieve.source_id": "m8.0"
+            }
+          }
+        ],
+        "artifacts": [
+          {
+            "name": "pagination-workspace-map",
+            "content": {
+              "implementation_file": "src/task_app/pagination.py",
+              "test_file": "tests/test_pagination.py",
+              "public_api": "page_after(rows, cursor, limit)",
+              "row_fields": [
+                "created_at",
+                "id",
+                "payload"
+              ],
+              "cursor_codec": "opaque URL-safe encoding owned by encode_cursor/decode_cursor"
+            },
+            "media_type": "application/json",
+            "metadata": {
+              "handoff_sieve.source_id": "a0"
+            }
+          }
+        ],
+        "tool_results": [
+          {
+            "role": "user",
+            "content": "Baseline public suite: 6 passed. Manual tied-timestamp probe: expected ids evt-002, evt-004, evt-009 across the boundary; current stub has no result.",
+            "kind": "tool_results",
+            "tags": [],
+            "metadata": {
+              "handoff_sieve.source_id": "m9.0"
+            }
+          }
+        ]
+      },
+      "report": {
+        "schema_version": "1",
+        "handoff_id": "1d567f52d3574f73bbf41e4515191cc1",
+        "request_id": null,
+        "started_at": "2026-10-10T15:18:37.738922Z",
+        "completed_at": "2026-10-10T15:18:37.739635Z",
+        "duration_ms": 0.737300026230514,
+        "status": "passed",
+        "failure_code": null,
+        "failed_policy": null,
+        "sender": "researcher",
+        "receiver": "coder",
+        "token_counter": "approx_utf8",
+        "config_fingerprint": "25d92ff20a13c4a518eb72bcf5b459dc339afcbb759b23228ba47dcc35929eb2",
+        "original_tokens": 683,
+        "transmitted_tokens": 683,
+        "removed_messages": 0,
+        "redactions": 0,
+        "duplicates_removed": 0,
+        "protected_messages": 0,
+        "summarizer_input_tokens": 0,
+        "summarizer_output_tokens": 0,
+        "summarizer_provider_input_tokens": null,
+        "summarizer_provider_output_tokens": null,
+        "events": [
+          {
+            "policy": "receiver_contract",
+            "policy_version": "1",
+            "action": "compiled",
+            "count": 0,
+            "details": {
+              "max_tokens": 1100,
+              "packet_tokens": 633,
+              "required_tokens": 633,
+              "preferred_omitted_for_budget": {}
+            }
+          },
+          {
+            "policy": "model_selector",
+            "policy_version": "1",
+            "action": "selected",
+            "count": 8,
+            "details": {
+              "source_units": 11,
+              "model_calls": 1
+            }
+          }
+        ],
+        "warnings": []
+      },
+      "source_tokens": 1492,
+      "packet_tokens": 633,
+      "omitted_count": 3,
+      "budget": {
+        "stage": "pipeline_output",
+        "token_counter": "approx_utf8",
+        "max_tokens": 1100,
+        "required_tokens": 633,
+        "packet_tokens": 633,
+        "preferred_selected": {},
+        "preferred_omitted_before_pipeline": {},
+        "preferred_omitted_after_pipeline": {}
+      },
+      "selection": {
+        "source_unit_count": 11,
+        "selected_source_ids": [
+          "m3.0",
+          "m4.0",
+          "m5.0",
+          "m6.0",
+          "m8.0",
+          "a0",
+          "m7.0",
+          "m9.0"
+        ],
+        "budget_omitted_source_ids": [],
+        "unselected_source_ids": [
+          "m0.0",
+          "m1.0",
+          "m2.0"
+        ],
+        "coverage": [
+          {
+            "need_index": 0,
+            "source_ids": [
+              "m3.0",
+              "m4.0"
+            ]
+          },
+          {
+            "need_index": 1,
+            "source_ids": [
+              "m4.0",
+              "m5.0"
+            ]
+          },
+          {
+            "need_index": 2,
+            "source_ids": [
+              "m7.0",
+              "m8.0"
+            ]
+          },
+          {
+            "need_index": 3,
+            "source_ids": [
+              "a0",
+              "m9.0",
+              "m6.0"
+            ]
+          }
+        ]
+      },
+      "plan": {
+        "selections": [
+          {
+            "source_id": "m3.0",
+            "section": "constraints",
+            "essential": true
+          },
+          {
+            "source_id": "m4.0",
+            "section": "decisions",
+            "essential": true
+          },
+          {
+            "source_id": "m5.0",
+            "section": "evidence",
+            "essential": true
+          },
+          {
+            "source_id": "m6.0",
+            "section": "completed_work",
+            "essential": true
+          },
+          {
+            "source_id": "m8.0",
+            "section": "pending_work",
+            "essential": true
+          },
+          {
+            "source_id": "a0",
+            "section": "artifacts",
+            "essential": true
+          },
+          {
+            "source_id": "m7.0",
+            "section": "failed_attempts",
+            "essential": true
+          },
+          {
+            "source_id": "m9.0",
+            "section": "tool_results",
+            "essential": true
+          }
+        ],
+        "coverage": [
+          {
+            "need_index": 0,
+            "source_ids": [
+              "m3.0",
+              "m4.0"
+            ]
+          },
+          {
+            "need_index": 1,
+            "source_ids": [
+              "m4.0",
+              "m5.0"
+            ]
+          },
+          {
+            "need_index": 2,
+            "source_ids": [
+              "m7.0",
+              "m8.0"
+            ]
+          },
+          {
+            "need_index": 3,
+            "source_ids": [
+              "a0",
+              "m9.0",
+              "m6.0"
+            ]
+          }
+        ],
+        "missing_needs": []
+      },
+      "selector_usage": {
+        "model": "gpt-5.6-sol",
+        "response_id": "resp_019a8828d75fe20a016aca5720cf78819794012b606aaa6ecb",
+        "input_tokens": 1969,
+        "output_tokens": 739,
+        "total_tokens": 2708,
+        "seconds": 48.57884309999645,
+        "model_calls": 1
+      }
+    },
+    "context": "{\"artifacts\":[{\"content\":{\"cursor_codec\":\"opaque URL-safe encoding owned by encode_cursor/decode_cursor\",\"implementation_file\":\"src/task_app/pagination.py\",\"public_api\":\"page_after(rows, cursor, limit)\",\"row_fields\":[\"created_at\",\"id\",\"payload\"],\"test_file\":\"tests/test_pagination.py\"},\"media_type\":\"application/json\",\"metadata\":{\"handoff_sieve.source_id\":\"a0\"},\"name\":\"pagination-workspace-map\"}],\"completed_work\":[{\"content\":\"ActivityRow, encode_cursor, decode_cursor, and the page_after stub already exist. Public tests cover unique timestamps and an empty final page, but not timestamp ties or malformed cursors.\",\"kind\":\"completed_work\",\"metadata\":{\"handoff_sieve.source_id\":\"m6.0\"}}],\"constraints\":[{\"content\":\"Keep page_after(rows, cursor, limit) and the existing opaque cursor codec public API. Sort ascending. A malformed cursor must raise ValueError. Do not add a dependency or change the input rows.\",\"kind\":\"constraints\",\"metadata\":{\"handoff_sieve.source_id\":\"m3.0\"}}],\"decisions\":[{\"content\":\"The accepted keyset is the lexicographically ordered pair (created_at, id). A decoded cursor identifies the last returned pair, and the next page must include only rows whose pair is strictly greater than it.\",\"kind\":\"decisions\",\"metadata\":{\"handoff_sieve.source_id\":\"m4.0\"}}],\"evidence\":[{\"content\":\"The fixed fixture has three records at 2026-04-12T09:00:00Z with ids evt-002, evt-004, and evt-009. The rejected created_at-only implementation skips evt-004 and evt-009 when a page ends at evt-002.\",\"kind\":\"evidence\",\"metadata\":{\"handoff_sieve.source_id\":\"m5.0\"}}],\"failed_attempts\":[{\"content\":\"A created_at-only predicate was tried and rejected because rows sharing the boundary timestamp disappeared. Offset plus page number was also rejected because concurrent inserts change later pages.\",\"kind\":\"failed_attempts\",\"metadata\":{\"handoff_sieve.source_id\":\"m7.0\"}}],\"goal\":\"Implement stable forward cursor pagination that does not skip records sharing a timestamp.\",\"pending_work\":[{\"content\":\"Implement composite cursor encode/decode and the exclusive lexicographic page_after selection. Cover timestamp ties, final-page behavior, and malformed cursor input.\",\"kind\":\"pending_work\",\"metadata\":{\"handoff_sieve.source_id\":\"m8.0\"}}],\"receiver\":\"coder\",\"sender\":\"researcher\",\"tool_results\":[{\"content\":\"Baseline public suite: 6 passed. Manual tied-timestamp probe: expected ids evt-002, evt-004, evt-009 across the boundary; current stub has no result.\",\"kind\":\"tool_results\",\"metadata\":{\"handoff_sieve.source_id\":\"m9.0\"}}]}",
+    "output": "{\"pagination_py\":\"\\\"\\\"\\\"Activity-feed pagination API to be completed by the receiving agent.\\\"\\\"\\\"\\n\\nfrom __future__ import annotations\\n\\nimport base64\\nimport binascii\\nimport json\\nimport re\\nfrom collections.abc import Sequence\\nfrom dataclasses import dataclass\\nfrom datetime import datetime\\nfrom typing import Any\\n\\n\\n@dataclass(frozen=True, slots=True)\\nclass ActivityRow:\\n    \\\"\\\"\\\"One activity-feed row.\\\"\\\"\\\"\\n\\n    created_at: datetime\\n    id: str\\n    payload: Any = None\\n\\n\\n_CURSOR_RE = re.compile(r\\\"^[A-Za-z0-9_-]+={0,2}$\\\")\\n\\n\\ndef encode_cursor(row: ActivityRow) -> str:\\n    \\\"\\\"\\\"Return an opaque cursor representing ``row``'s pagination key.\\\"\\\"\\\"\\n\\n    value = json.dumps(\\n        [row.created_at.isoformat(), row.id],\\n        ensure_ascii=True,\\n        separators=(\\\",\\\", \\\":\\\"),\\n    ).encode(\\\"ascii\\\")\\n    return base64.urlsafe_b64encode(value).decode(\\\"ascii\\\").rstrip(\\\"=\\\")\\n\\n\\ndef decode_cursor(cursor: str) -> tuple[datetime, str]:\\n    \\\"\\\"\\\"Decode a cursor or raise ``ValueError`` when it is malformed.\\\"\\\"\\\"\\n\\n    if not isinstance(cursor, str) or not cursor or not _CURSOR_RE.fullmatch(cursor):\\n        raise ValueError(\\\"malformed cursor\\\")\\n\\n    padding = \\\"=\\\" * (-len(cursor) % 4)\\n    try:\\n        raw = base64.urlsafe_b64decode(cursor + padding)\\n        value = json.loads(raw.decode(\\\"utf-8\\\"))\\n    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:\\n        raise ValueError(\\\"malformed cursor\\\") from exc\\n\\n    if (\\n        not isinstance(value, list)\\n        or len(value) != 2\\n        or not isinstance(value[0], str)\\n        or not isinstance(value[1], str)\\n    ):\\n        raise ValueError(\\\"malformed cursor\\\")\\n\\n    timestamp = value[0]\\n    if timestamp.endswith(\\\"Z\\\"):\\n        timestamp = timestamp[:-1] + \\\"+00:00\\\"\\n    try:\\n        created_at = datetime.fromisoformat(timestamp)\\n    except ValueError as exc:\\n        raise ValueError(\\\"malformed cursor\\\") from exc\\n    return created_at, value[1]\\n\\n\\ndef page_after(\\n    rows: Sequence[ActivityRow],\\n    cursor: str | None,\\n    limit: int,\\n) -> tuple[list[ActivityRow], str | None]:\\n    \\\"\\\"\\\"Return the next ascending page and a cursor when more rows remain.\\n\\n    The returned cursor is ``None`` on the final page. The function must not\\n    mutate ``rows`` or any row payload. A malformed non-``None`` cursor raises\\n    ``ValueError``.\\n    \\\"\\\"\\\"\\n\\n    if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:\\n        raise ValueError(\\\"limit must be a positive integer\\\")\\n\\n    boundary = decode_cursor(cursor) if cursor is not None else None\\n    ordered = sorted(rows, key=lambda row: (row.created_at, row.id))\\n    if boundary is not None:\\n        ordered = [\\n            row\\n            for row in ordered\\n            if (row.created_at, row.id) > boundary\\n        ]\\n\\n    page = ordered[:limit]\\n    if len(ordered) <= limit or not page:\\n        return page, None\\n    return page, encode_cursor(page[-1])\"}",
+    "handoff_tokens": 633,
+    "acceptance": {
+      "checks": [
+        {
+          "id": "cursor_round_trip",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "malformed_cursor",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "page_size_1",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "page_size_7",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "page_size_13",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "terminal_page",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "id": "input_immutability",
+          "passed": true,
+          "detail": null
+        }
+      ],
+      "overall": true,
+      "error": null,
+      "derived_blocking_issue_ids": null
+    },
+    "model_calls": 2,
+    "available_provider_tokens": 9386
+  }
+]

@@ -1,5 +1,28 @@
 # Alpha migration notes
 
+## Development `0.4.0a1`
+
+The new model path is opt-in. Existing deterministic code and contracts with
+empty `needs` remain compatible; no API credential or extra model call is
+required by default.
+
+- Use async `compile_model_handoff()` and an explicit selector when adding
+  natural-language `ReceiverContract.needs`. `compile_handoff()` and
+  `compile_history()` reject nonempty needs because they cannot assess them.
+- On the model path, `required` pins the selected content of that section,
+  rather than the entire original section. Need citations pin their source
+  units too. Coverage proves references exist; relevance remains model judgment.
+- Ordinary text is addressed by nonblank lines, with code fences and structured
+  values kept intact. Source IDs are local to the compilation snapshot.
+  `omitted_count` counts source units on this path.
+- Use async `OpenAIModelHandoffFilter` in an SDK `handoff(input_filter=...)`.
+  The existing deterministic filter remains available. Client-managed history
+  is required for the canonical packet boundary.
+- The selector receives the supplied source catalog and adds preparation cost.
+  Configure its API client, model, timeout and retry policy explicitly.
+
+See [model handoff](model-handoff.md) for a complete example and limitations.
+
 ## `0.3.0a3`
 
 Install the GitHub prerelease wheel or check out `v0.3.0a3` and install the

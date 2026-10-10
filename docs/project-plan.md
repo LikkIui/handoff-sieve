@@ -11,7 +11,29 @@
 > 当前定位是 receiver-specific context / handoff optimization；本文后续的安全加固内容
 > 仅是已完成的底层能力，不代表当前产品主线或近期待办。
 
-## 最新接管状态（2026-10-02）
+## 最新接管状态（2026-10-10）
+
+当前 `main` 开发版本为 `0.4.0a1`，已发布的 GitHub alpha 仍为 `0.3.0a3`；PyPI 继续暂缓。
+本轮根据用户要求检查 agent-handoff、agent-handoff-protocol、LLMLingua、RTK 的实际代码，
+推进模型辅助的接收任务选择，而非增加企业协议或 adapter。
+
+- 已实现 `ReceiverContract.needs`、`compile_model_handoff()`、原文选择计划和需求引用，
+  程序复制源内容、保护必要状态并检查最终 packet 预算；
+- 已实现 `OpenAIHandoffSelector` 和异步 `OpenAIModelHandoffFilter`；真实 SDK 接收请求只有
+  一份 canonical packet，生成代码通过 API 与六项行为检查；
+- 已保存 43 次真实任务请求、164,867 个 provider 报告 token；两个接收任务均通过，但强摘要
+  也通过且总消耗更低。三项复杂 pilot 首次 2/3 通过；一次重复原文引用被拦截，修正指令后的
+  独立审查复测通过，首次失败保留；
+- 全套 370 项回归测试、静态检查及 wheel/sdist 安装验证通过。
+
+结果见 [`2026-10-10-model-handoff`](../evals/takeover/results/2026-10-10-model-handoff/README.md)，
+用法见 [`model-handoff.md`](model-handoff.md)，代码参考见
+[`design-references-2026-10-10.md`](design-references-2026-10-10.md)。
+下一步优先扩大现有可执行任务上的选择验证、修必要依赖丢失及结构无效的失败、减少选择
+调用的准备消耗；不增加框架或安全平台内容。尚未证明稳定胜过强摘要，不得宣传总体成本
+下降或数学意义的最小充分状态。
+
+## 历史接管状态（2026-10-02）
 
 本轮新增能力收敛为 `0.3.0a3`：连续交接修复、紧凑 packet、
 明确任务和状态标识的可选预处理、输入格式兼容，以及真实 SDK 的三 Agent 离线接力。

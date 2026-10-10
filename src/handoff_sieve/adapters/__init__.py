@@ -11,14 +11,18 @@ from handoff_sieve.adapters.openai_agents import (
     OpenAIHandoffPacketFilter,
 )
 from handoff_sieve.adapters.openai_contract import (
+    OpenAIModelHandoffFilter,
     OpenAIReceiverContractFilter,
     compile_openai_handoff,
 )
+from handoff_sieve.adapters.openai_selector import OpenAIHandoffSelector
 
 __all__ = [
     "LangGraphHandoff",
     "OpenAIHandoffFilter",
     "OpenAIHandoffPacketFilter",
+    "OpenAIHandoffSelector",
+    "OpenAIModelHandoffFilter",
     "OpenAIReceiverContractFilter",
     "compile_langgraph_state",
     "compile_openai_handoff",

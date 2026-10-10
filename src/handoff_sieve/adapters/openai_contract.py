@@ -17,6 +17,11 @@ from handoff_sieve.adapters.openai_agents import (
 )
 from handoff_sieve.compiler import ReceiverContract
 from handoff_sieve.exceptions import HandoffIntegrityError, UnsupportedAdapterModeError
+from handoff_sieve.model_selection import (
+    HandoffSelector,
+    ModelHandoffCompilation,
+    compile_model_handoff,
+)
 from handoff_sieve.models import Artifact, HandoffEnvelope, Message
 from handoff_sieve.normalization import (
     HistoryCompilation,
@@ -210,3 +215,48 @@ class OpenAIReceiverContractFilter:
         if self.on_compile is not None:
             self.on_compile(compilation)
         return packet_filter(data)
+
+
+class OpenAIModelHandoffFilter:
+    """Select original spans from the current SDK snapshot using a model.
+
+    This async filter adds a selector call at each handoff. It shares the
+    existing tool-pair validation and canonical receiver packet delivery.
+    The original session history and local run context stay intact.
+    """
+
+    def __init__(
+        self,
+        contract: ReceiverContract,
+        *,
+        selector: HandoffSelector,
+        sender: str,
+        receiver: str,
+        artifacts: Sequence[Artifact] = (),
+        pipeline: HandoffPipeline | None = None,
+        on_compile: Callable[[ModelHandoffCompilation], None] | None = None,
+    ) -> None:
+        self.contract = contract
+        self.selector = selector
+        self.sender = sender
+        self.receiver = receiver
+        self.artifacts = tuple(item.model_copy(deep=True) for item in artifacts)
+        self.pipeline = pipeline
+        self.on_compile = on_compile
+
+    async def __call__(self, data: Any) -> Any:
+        messages, inherited = _state_from_snapshot(data, sender=self.sender)
+        compilation = await compile_model_handoff(
+            HandoffEnvelope(
+                sender=self.sender,
+                receiver=self.receiver,
+                messages=messages,
+                artifacts=merge_artifacts(inherited, self.artifacts),
+            ),
+            self.contract,
+            selector=self.selector,
+            pipeline=self.pipeline,
+        )
+        if self.on_compile is not None:
+            self.on_compile(compilation)
+        return OpenAIHandoffPacketFilter(compilation.packet)(data)

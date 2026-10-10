@@ -1,0 +1,1045 @@
+{
+  "model": "gpt-5.6-sol",
+  "synthetic": true,
+  "automatic_retries": 0,
+  "tasks": [
+    {
+      "task": "rc01_composite_cursor",
+      "variant": "category labels removed; content unchanged",
+      "synthetic": true,
+      "trials": 1,
+      "source_unchanged": true,
+      "records": [
+        {
+          "task": "rc01_composite_cursor",
+          "condition": "full_history",
+          "context": "{\"artifacts\":[{\"content\":{\"cursor_codec\":\"opaque URL-safe encoding owned by encode_cursor/decode_cursor\",\"implementation_file\":\"src/task_app/pagination.py\",\"public_api\":\"page_after(rows, cursor, limit)\",\"row_fields\":[\"created_at\",\"id\",\"payload\"],\"test_file\":\"tests/test_pagination.py\"},\"media_type\":\"application/json\",\"metadata\":{},\"name\":\"pagination-workspace-map\"}],\"messages\":[{\"content\":[\"Offset pagination is familiar to users and easy to demonstrate, but these notes concern a future admin search screen rather than the activity-feed takeover task.\",\"One database vendor recommends approximate row counts for very deep pages. Row counts are outside the accepted activity-feed design and do not affect cursor construction.\",\"A hosted search product offers snapshot pagination with a proprietary continuation token. The project is not adopting that service.\",\"An early sketch proposed a created_at-only cursor because the first sample happened to contain unique timestamps. That sketch was explicitly rejected after tied rows were found.\",\"Another discarded sketch encoded page number and page size in the cursor. It cannot remain stable while rows are inserted and is not the selected approach.\",\"Index tuning for descending feeds was discussed for a later milestone. This task keeps the existing ascending public order.\",\"A long comparison of base32 and base64 readability produced no product requirement. The existing cursor helper already owns opaque encoding.\",\"The analytics team may eventually request filtering by actor type. No filter is part of this task.\",\"Search snippets discussed server-side cursors tied to database connections. The current API is stateless and will not keep database sessions open.\",\"A meeting also covered cache invalidation, feed retention, and mobile prefetch. None changes the accepted keyset ordering for this handoff.\"],\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":[\"Query-plan capture 01 completed against an unrelated million-row synthetic table; the output was archived for future index work.\",\"Query-plan capture 02 repeated the same offset query with a warm cache and produced a shorter runtime.\",\"Formatter run completed with no changes in the documentation package.\",\"A crawler fetched six pagination articles and recorded titles, authors, navigation text, cookie banners, and footer links.\",\"The local database probe printed connection setup, transaction begin, transaction rollback, and teardown lines for every sample.\",\"A benchmark script compared page sizes 25, 50, and 100 for a different endpoint that has no timestamp ties.\",\"Static analysis reported no findings in the current stub because the missing branch is represented by NotImplementedError.\",\"A dependency audit listed optional database drivers that are not installed by this package.\",\"The test collector discovered unrelated account, billing, export, and notification suites.\",\"An exploratory log repeated the phrase page fetched successfully for each of eighty pages; it contains no acceptance decision.\"],\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":[\"The product meeting spent most of its time on feed naming, empty-state copy, skeleton loading, and the placement of a refresh button.\",\"A designer asked whether the cursor could be visible in the URL. The answer was deferred and no URL work belongs to this task.\",\"The release discussion considered screenshots, changelog wording, and a launch post for several unrelated features.\",\"A later roadmap item may add reverse navigation. This takeover implements forward pagination only.\",\"Ownership of the mobile feed was reassigned, but the Python pagination module and its public API remain unchanged.\",\"Observability labels, dashboard colors, and alert thresholds were recorded for later planning and carry no coding requirement here.\"],\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"Keep page_after(rows, cursor, limit) and the existing opaque cursor codec public API. Sort ascending. A malformed cursor must raise ValueError. Do not add a dependency or change the input rows.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"The accepted keyset is the lexicographically ordered pair (created_at, id). A decoded cursor identifies the last returned pair, and the next page must include only rows whose pair is strictly greater than it.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"The fixed fixture has three records at 2026-04-12T09:00:00Z with ids evt-002, evt-004, and evt-009. The rejected created_at-only implementation skips evt-004 and evt-009 when a page ends at evt-002.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"ActivityRow, encode_cursor, decode_cursor, and the page_after stub already exist. Public tests cover unique timestamps and an empty final page, but not timestamp ties or malformed cursors.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"A created_at-only predicate was tried and rejected because rows sharing the boundary timestamp disappeared. Offset plus page number was also rejected because concurrent inserts change later pages.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"Implement composite cursor encode/decode and the exclusive lexicographic page_after selection. Cover timestamp ties, final-page behavior, and malformed cursor input.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"Baseline public suite: 6 passed. Manual tied-timestamp probe: expected ids evt-002, evt-004, evt-009 across the boundary; current stub has no result.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]}],\"metadata\":{\"catalog_id\":\"RC-01\",\"fixture_status\":\"not_run\"},\"receiver\":\"coder\",\"sender\":\"researcher\"}",
+          "output": "{\"pagination_py\":\"\\\"\\\"\\\"Activity-feed pagination API to be completed by the receiving agent.\\\"\\\"\\\"\\n\\nfrom __future__ import annotations\\n\\nimport base64\\nimport binascii\\nimport json\\nimport re\\nfrom collections.abc import Sequence\\nfrom dataclasses import dataclass\\nfrom datetime import datetime\\nfrom typing import Any\\n\\n\\n@dataclass(frozen=True, slots=True)\\nclass ActivityRow:\\n    \\\"\\\"\\\"One activity-feed row.\\\"\\\"\\\"\\n\\n    created_at: datetime\\n    id: str\\n    payload: Any = None\\n\\n\\ndef encode_cursor(row: ActivityRow) -> str:\\n    \\\"\\\"\\\"Return an opaque cursor representing ``row``'s pagination key.\\\"\\\"\\\"\\n\\n    value = json.dumps(\\n        [row.created_at.isoformat(), row.id],\\n        ensure_ascii=True,\\n        separators=(\\\",\\\", \\\":\\\"),\\n    ).encode(\\\"ascii\\\")\\n    return base64.urlsafe_b64encode(value).decode(\\\"ascii\\\").rstrip(\\\"=\\\")\\n\\n\\ndef decode_cursor(cursor: str) -> tuple[datetime, str]:\\n    \\\"\\\"\\\"Decode a cursor or raise ``ValueError`` when it is malformed.\\\"\\\"\\\"\\n\\n    if not isinstance(cursor, str) or not cursor or not re.fullmatch(\\n        r\\\"[A-Za-z0-9_-]+\\\", cursor\\n    ):\\n        raise ValueError(\\\"malformed cursor\\\")\\n\\n    try:\\n        padding = \\\"=\\\" * (-len(cursor) % 4)\\n        raw = base64.b64decode(\\n            cursor + padding,\\n            altchars=b\\\"-_\\\",\\n            validate=True,\\n        )\\n        value = json.loads(raw.decode(\\\"ascii\\\"))\\n        if (\\n            not isinstance(value, list)\\n            or len(value) != 2\\n            or not isinstance(value[0], str)\\n            or not isinstance(value[1], str)\\n        ):\\n            raise ValueError\\n        created_at = datetime.fromisoformat(value[0])\\n    except (ValueError, TypeError, UnicodeError, json.JSONDecodeError,\\n            binascii.Error, OverflowError):\\n        raise ValueError(\\\"malformed cursor\\\") from None\\n\\n    return created_at, value[1]\\n\\n\\ndef page_after(\\n    rows: Sequence[ActivityRow],\\n    cursor: str | None,\\n    limit: int,\\n) -> tuple[list[ActivityRow], str | None]:\\n    \\\"\\\"\\\"Return the next ascending page and a cursor when more rows remain.\\n\\n    The returned cursor is ``None`` on the final page. The function must not\\n    mutate ``rows`` or any row payload. A malformed non-``None`` cursor raises\\n    ``ValueError``.\\n    \\\"\\\"\\\"\\n\\n    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:\\n        raise ValueError(\\\"limit must be a positive integer\\\")\\n\\n    boundary = decode_cursor(cursor) if cursor is not None else None\\n    ordered = sorted(rows, key=lambda row: (row.created_at, row.id))\\n    if boundary is not None:\\n        ordered = [\\n            row\\n            for row in ordered\\n            if (row.created_at, row.id) > boundary\\n        ]\\n\\n    page = ordered[:limit]\\n    if len(ordered) <= limit or not page:\\n        return page, None\\n    return page, encode_cursor(page[-1])\\n\"}",
+          "handoff_tokens": 1450,
+          "acceptance": {
+            "checks": [
+              {
+                "id": "cursor_round_trip",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "malformed_cursor",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "page_size_1",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "page_size_7",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "page_size_13",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "terminal_page",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "input_immutability",
+                "passed": true,
+                "detail": null
+              }
+            ],
+            "overall": true,
+            "error": null,
+            "derived_blocking_issue_ids": null
+          },
+          "model_calls": 1,
+          "available_provider_tokens": 7191
+        },
+        {
+          "task": "rc01_composite_cursor",
+          "condition": "receiver_aware_summary",
+          "context": "Receiver: coder  \nCatalog: RC-01\n\nGoal  \nImplement stable forward cursor pagination without skipping records that share a timestamp.\n\nAccepted constraints and public API  \n- Preserve `page_after(rows, cursor, limit)`.\n- Preserve existing public `encode_cursor` / `decode_cursor` opaque cursor codec API.\n- Keep input rows unchanged; row fields are `created_at`, `id`, and `payload`.\n- No new dependency.\n- Sort in ascending order.\n- Malformed cursors must raise `ValueError`.\n- API remains stateless; no database sessions or proprietary hosted-search pagination.\n- Forward pagination only; no reverse navigation or unrelated filtering.\n\nAccepted decisions  \n- Cursor boundary is the lexicographically ordered pair `(created_at, id)`.\n- A decoded cursor identifies the last returned pair.\n- The next page must select only rows whose pair is strictly greater than the cursor pair.\n- Existing opaque URL-safe encoding remains owned by `encode_cursor` / `decode_cursor`.\n- Public API and existing ascending order remain unchanged.\n\nEvidence  \n- Fixed fixture has three records at `2026-04-12T09:00:00Z`: `evt-002`, `evt-004`, `evt-009`.\n- When a page ends at `evt-002`, the expected continuation includes `evt-004` and `evt-009`; the created_at-only implementation skipped them.\n- Baseline public suite: 6 passed.\n- Manual tied-timestamp probe expected IDs `evt-002`, `evt-004`, `evt-009` across the boundary; current stub produced no result.\n- Public tests currently cover unique timestamps and an empty final page, but not ties or malformed cursors.\n\nCompleted work / current state  \n- `ActivityRow`, `encode_cursor`, `decode_cursor`, and the `page_after` stub already exist.\n- Workspace and test locations are identified below.\n- No accepted implementation of composite cursor selection is currently present.\n- Fixture status: `not_run`.\n\nFailed approaches to avoid  \n- `created_at`-only predicate: rejected because equal-timestamp rows disappear.\n- Offset plus page number: rejected because concurrent inserts shift later pages.\n- Do not use page number/page size in the cursor, database-session cursors, or a hosted search continuation token.\n\nPending work  \n- Implement composite cursor encode/decode behavior using the existing codec/API.\n- Implement exclusive lexicographic `page_after` selection on `(created_at, id)`.\n- Add or update coverage for:\n  - timestamp ties across page boundaries,\n  - final-page and empty-final-page behavior,\n  - malformed cursor input raising `ValueError`.\n- Run the relevant test suite and tied-timestamp probe; record results.\n\nRelevant artifacts  \n- Artifact: `pagination-workspace-map`\n- Implementation: `src/task_app/pagination.py`\n- Tests: `tests/test_pagination.py`\n- Public API: `page_after(rows, cursor, limit)`\n- Cursor codec: opaque URL-safe encoding via `encode_cursor` / `decode_cursor`",
+          "output": "{\"pagination_py\":\"\\\"\\\"\\\"Activity-feed pagination API to be completed by the receiving agent.\\\"\\\"\\\"\\n\\nfrom __future__ import annotations\\n\\nimport base64\\nimport binascii\\nimport json\\nimport re\\nfrom collections.abc import Sequence\\nfrom dataclasses import dataclass\\nfrom datetime import datetime\\nfrom typing import Any\\n\\n\\n@dataclass(frozen=True, slots=True)\\nclass ActivityRow:\\n    \\\"\\\"\\\"One activity-feed row.\\\"\\\"\\\"\\n\\n    created_at: datetime\\n    id: str\\n    payload: Any = None\\n\\n\\n_CURSOR_RE = re.compile(r\\\"^[A-Za-z0-9_-]+={0,2}$\\\")\\n\\n\\ndef encode_cursor(row: ActivityRow) -> str:\\n    \\\"\\\"\\\"Return an opaque cursor representing ``row``'s pagination key.\\\"\\\"\\\"\\n\\n    value = json.dumps(\\n        {\\\"created_at\\\": row.created_at.isoformat(), \\\"id\\\": row.id},\\n        ensure_ascii=True,\\n        separators=(\\\",\\\", \\\":\\\"),\\n    ).encode(\\\"utf-8\\\")\\n    return base64.urlsafe_b64encode(value).decode(\\\"ascii\\\").rstrip(\\\"=\\\")\\n\\n\\ndef decode_cursor(cursor: str) -> tuple[datetime, str]:\\n    \\\"\\\"\\\"Decode a cursor or raise ``ValueError`` when it is malformed.\\\"\\\"\\\"\\n\\n    if not isinstance(cursor, str) or not cursor or not _CURSOR_RE.fullmatch(cursor):\\n        raise ValueError(\\\"malformed cursor\\\")\\n\\n    try:\\n        padding = \\\"=\\\" * (-len(cursor) % 4)\\n        decoded = base64.b64decode(\\n            (cursor + padding).encode(\\\"ascii\\\"),\\n            altchars=b\\\"-_\\\",\\n            validate=True,\\n        )\\n        value = json.loads(decoded.decode(\\\"utf-8\\\"))\\n    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError) as exc:\\n        raise ValueError(\\\"malformed cursor\\\") from exc\\n\\n    if not isinstance(value, dict) or set(value) != {\\\"created_at\\\", \\\"id\\\"}:\\n        raise ValueError(\\\"malformed cursor\\\")\\n    timestamp = value[\\\"created_at\\\"]\\n    row_id = value[\\\"id\\\"]\\n    if not isinstance(timestamp, str) or not isinstance(row_id, str):\\n        raise ValueError(\\\"malformed cursor\\\")\\n\\n    try:\\n        created_at = datetime.fromisoformat(timestamp)\\n    except (TypeError, ValueError) as exc:\\n        raise ValueError(\\\"malformed cursor\\\") from exc\\n    return created_at, row_id\\n\\n\\ndef page_after(\\n    rows: Sequence[ActivityRow],\\n    cursor: str | None,\\n    limit: int,\\n) -> tuple[list[ActivityRow], str | None]:\\n    \\\"\\\"\\\"Return the next ascending page and a cursor when more rows remain.\\n\\n    The returned cursor is ``None`` on the final page. The function must not\\n    mutate ``rows`` or any row payload. A malformed non-``None`` cursor raises\\n    ``ValueError``.\\n    \\\"\\\"\\\"\\n\\n    if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:\\n        raise ValueError(\\\"limit must be a positive integer\\\")\\n\\n    boundary = decode_cursor(cursor) if cursor is not None else None\\n    ordered = sorted(rows, key=lambda row: (row.created_at, row.id))\\n    if boundary is not None:\\n        ordered = [\\n            row\\n            for row in ordered\\n            if (row.created_at, row.id) > boundary\\n        ]\\n\\n    page = ordered[:limit]\\n    if len(ordered) <= limit:\\n        return page, None\\n    return page, encode_cursor(page[-1])\\n\"}",
+          "handoff_tokens": 709,
+          "acceptance": {
+            "checks": [
+              {
+                "id": "cursor_round_trip",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "malformed_cursor",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "page_size_1",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "page_size_7",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "page_size_13",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "terminal_page",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "input_immutability",
+                "passed": true,
+                "detail": null
+              }
+            ],
+            "overall": true,
+            "error": null,
+            "derived_blocking_issue_ids": null
+          },
+          "model_calls": 2,
+          "available_provider_tokens": 9427
+        },
+        {
+          "task": "rc01_composite_cursor",
+          "condition": "model_handoff",
+          "compilation": {
+            "packet": {
+              "sender": "researcher",
+              "receiver": "coder",
+              "goal": "Implement stable forward cursor pagination that does not skip records sharing a timestamp.",
+              "constraints": [
+                {
+                  "role": "user",
+                  "content": "Keep page_after(rows, cursor, limit) and the existing opaque cursor codec public API. Sort ascending. A malformed cursor must raise ValueError. Do not add a dependency or change the input rows.",
+                  "kind": "constraints",
+                  "tags": [],
+                  "metadata": {
+                    "handoff_sieve.source_id": "m3.0"
+                  }
+                }
+              ],
+              "decisions": [
+                {
+                  "role": "user",
+                  "content": "The accepted keyset is the lexicographically ordered pair (created_at, id). A decoded cursor identifies the last returned pair, and the next page must include only rows whose pair is strictly greater than it.",
+                  "kind": "decisions",
+                  "tags": [],
+                  "metadata": {
+                    "handoff_sieve.source_id": "m4.0"
+                  }
+                }
+              ],
+              "evidence": [
+                {
+                  "role": "user",
+                  "content": "The fixed fixture has three records at 2026-04-12T09:00:00Z with ids evt-002, evt-004, and evt-009. The rejected created_at-only implementation skips evt-004 and evt-009 when a page ends at evt-002.",
+                  "kind": "evidence",
+                  "tags": [],
+                  "metadata": {
+                    "handoff_sieve.source_id": "m5.0"
+                  }
+                }
+              ],
+              "completed_work": [
+                {
+                  "role": "user",
+                  "content": "ActivityRow, encode_cursor, decode_cursor, and the page_after stub already exist. Public tests cover unique timestamps and an empty final page, but not timestamp ties or malformed cursors.",
+                  "kind": "completed_work",
+                  "tags": [],
+                  "metadata": {
+                    "handoff_sieve.source_id": "m6.0"
+                  }
+                }
+              ],
+              "failed_attempts": [
+                {
+                  "role": "user",
+                  "content": "A created_at-only predicate was tried and rejected because rows sharing the boundary timestamp disappeared. Offset plus page number was also rejected because concurrent inserts change later pages.",
+                  "kind": "failed_attempts",
+                  "tags": [],
+                  "metadata": {
+                    "handoff_sieve.source_id": "m7.0"
+                  }
+                }
+              ],
+              "pending_work": [
+                {
+                  "role": "user",
+                  "content": "Implement composite cursor encode/decode and the exclusive lexicographic page_after selection. Cover timestamp ties, final-page behavior, and malformed cursor input.",
+                  "kind": "pending_work",
+                  "tags": [],
+                  "metadata": {
+                    "handoff_sieve.source_id": "m8.0"
+                  }
+                }
+              ],
+              "artifacts": [
+                {
+                  "name": "pagination-workspace-map",
+                  "content": {
+                    "implementation_file": "src/task_app/pagination.py",
+                    "test_file": "tests/test_pagination.py",
+                    "public_api": "page_after(rows, cursor, limit)",
+                    "row_fields": [
+                      "created_at",
+                      "id",
+                      "payload"
+                    ],
+                    "cursor_codec": "opaque URL-safe encoding owned by encode_cursor/decode_cursor"
+                  },
+                  "media_type": "application/json",
+                  "metadata": {
+                    "handoff_sieve.source_id": "a0"
+                  }
+                }
+              ],
+              "tool_results": [
+                {
+                  "role": "user",
+                  "content": "Baseline public suite: 6 passed. Manual tied-timestamp probe: expected ids evt-002, evt-004, evt-009 across the boundary; current stub has no result.",
+                  "kind": "tool_results",
+                  "tags": [],
+                  "metadata": {
+                    "handoff_sieve.source_id": "m9.0"
+                  }
+                }
+              ]
+            },
+            "report": {
+              "schema_version": "1",
+              "handoff_id": "1d567f52d3574f73bbf41e4515191cc1",
+              "request_id": null,
+              "started_at": "2026-10-10T15:18:37.738922Z",
+              "completed_at": "2026-10-10T15:18:37.739635Z",
+              "duration_ms": 0.737300026230514,
+              "status": "passed",
+              "failure_code": null,
+              "failed_policy": null,
+              "sender": "researcher",
+              "receiver": "coder",
+              "token_counter": "approx_utf8",
+              "config_fingerprint": "25d92ff20a13c4a518eb72bcf5b459dc339afcbb759b23228ba47dcc35929eb2",
+              "original_tokens": 683,
+              "transmitted_tokens": 683,
+              "removed_messages": 0,
+              "redactions": 0,
+              "duplicates_removed": 0,
+              "protected_messages": 0,
+              "summarizer_input_tokens": 0,
+              "summarizer_output_tokens": 0,
+              "summarizer_provider_input_tokens": null,
+              "summarizer_provider_output_tokens": null,
+              "events": [
+                {
+                  "policy": "receiver_contract",
+                  "policy_version": "1",
+                  "action": "compiled",
+                  "count": 0,
+                  "details": {
+                    "max_tokens": 1100,
+                    "packet_tokens": 633,
+                    "required_tokens": 633,
+                    "preferred_omitted_for_budget": {}
+                  }
+                },
+                {
+                  "policy": "model_selector",
+                  "policy_version": "1",
+                  "action": "selected",
+                  "count": 8,
+                  "details": {
+                    "source_units": 11,
+                    "model_calls": 1
+                  }
+                }
+              ],
+              "warnings": []
+            },
+            "source_tokens": 1492,
+            "packet_tokens": 633,
+            "omitted_count": 3,
+            "budget": {
+              "stage": "pipeline_output",
+              "token_counter": "approx_utf8",
+              "max_tokens": 1100,
+              "required_tokens": 633,
+              "packet_tokens": 633,
+              "preferred_selected": {},
+              "preferred_omitted_before_pipeline": {},
+              "preferred_omitted_after_pipeline": {}
+            },
+            "selection": {
+              "source_unit_count": 11,
+              "selected_source_ids": [
+                "m3.0",
+                "m4.0",
+                "m5.0",
+                "m6.0",
+                "m8.0",
+                "a0",
+                "m7.0",
+                "m9.0"
+              ],
+              "budget_omitted_source_ids": [],
+              "unselected_source_ids": [
+                "m0.0",
+                "m1.0",
+                "m2.0"
+              ],
+              "coverage": [
+                {
+                  "need_index": 0,
+                  "source_ids": [
+                    "m3.0",
+                    "m4.0"
+                  ]
+                },
+                {
+                  "need_index": 1,
+                  "source_ids": [
+                    "m4.0",
+                    "m5.0"
+                  ]
+                },
+                {
+                  "need_index": 2,
+                  "source_ids": [
+                    "m7.0",
+                    "m8.0"
+                  ]
+                },
+                {
+                  "need_index": 3,
+                  "source_ids": [
+                    "a0",
+                    "m9.0",
+                    "m6.0"
+                  ]
+                }
+              ]
+            },
+            "plan": {
+              "selections": [
+                {
+                  "source_id": "m3.0",
+                  "section": "constraints",
+                  "essential": true
+                },
+                {
+                  "source_id": "m4.0",
+                  "section": "decisions",
+                  "essential": true
+                },
+                {
+                  "source_id": "m5.0",
+                  "section": "evidence",
+                  "essential": true
+                },
+                {
+                  "source_id": "m6.0",
+                  "section": "completed_work",
+                  "essential": true
+                },
+                {
+                  "source_id": "m8.0",
+                  "section": "pending_work",
+                  "essential": true
+                },
+                {
+                  "source_id": "a0",
+                  "section": "artifacts",
+                  "essential": true
+                },
+                {
+                  "source_id": "m7.0",
+                  "section": "failed_attempts",
+                  "essential": true
+                },
+                {
+                  "source_id": "m9.0",
+                  "section": "tool_results",
+                  "essential": true
+                }
+              ],
+              "coverage": [
+                {
+                  "need_index": 0,
+                  "source_ids": [
+                    "m3.0",
+                    "m4.0"
+                  ]
+                },
+                {
+                  "need_index": 1,
+                  "source_ids": [
+                    "m4.0",
+                    "m5.0"
+                  ]
+                },
+                {
+                  "need_index": 2,
+                  "source_ids": [
+                    "m7.0",
+                    "m8.0"
+                  ]
+                },
+                {
+                  "need_index": 3,
+                  "source_ids": [
+                    "a0",
+                    "m9.0",
+                    "m6.0"
+                  ]
+                }
+              ],
+              "missing_needs": []
+            },
+            "selector_usage": {
+              "model": "gpt-5.6-sol",
+              "response_id": "resp_019a8828d75fe20a016aca5720cf78819794012b606aaa6ecb",
+              "input_tokens": 1969,
+              "output_tokens": 739,
+              "total_tokens": 2708,
+              "seconds": 48.57884309999645,
+              "model_calls": 1
+            }
+          },
+          "context": "{\"artifacts\":[{\"content\":{\"cursor_codec\":\"opaque URL-safe encoding owned by encode_cursor/decode_cursor\",\"implementation_file\":\"src/task_app/pagination.py\",\"public_api\":\"page_after(rows, cursor, limit)\",\"row_fields\":[\"created_at\",\"id\",\"payload\"],\"test_file\":\"tests/test_pagination.py\"},\"media_type\":\"application/json\",\"metadata\":{\"handoff_sieve.source_id\":\"a0\"},\"name\":\"pagination-workspace-map\"}],\"completed_work\":[{\"content\":\"ActivityRow, encode_cursor, decode_cursor, and the page_after stub already exist. Public tests cover unique timestamps and an empty final page, but not timestamp ties or malformed cursors.\",\"kind\":\"completed_work\",\"metadata\":{\"handoff_sieve.source_id\":\"m6.0\"}}],\"constraints\":[{\"content\":\"Keep page_after(rows, cursor, limit) and the existing opaque cursor codec public API. Sort ascending. A malformed cursor must raise ValueError. Do not add a dependency or change the input rows.\",\"kind\":\"constraints\",\"metadata\":{\"handoff_sieve.source_id\":\"m3.0\"}}],\"decisions\":[{\"content\":\"The accepted keyset is the lexicographically ordered pair (created_at, id). A decoded cursor identifies the last returned pair, and the next page must include only rows whose pair is strictly greater than it.\",\"kind\":\"decisions\",\"metadata\":{\"handoff_sieve.source_id\":\"m4.0\"}}],\"evidence\":[{\"content\":\"The fixed fixture has three records at 2026-04-12T09:00:00Z with ids evt-002, evt-004, and evt-009. The rejected created_at-only implementation skips evt-004 and evt-009 when a page ends at evt-002.\",\"kind\":\"evidence\",\"metadata\":{\"handoff_sieve.source_id\":\"m5.0\"}}],\"failed_attempts\":[{\"content\":\"A created_at-only predicate was tried and rejected because rows sharing the boundary timestamp disappeared. Offset plus page number was also rejected because concurrent inserts change later pages.\",\"kind\":\"failed_attempts\",\"metadata\":{\"handoff_sieve.source_id\":\"m7.0\"}}],\"goal\":\"Implement stable forward cursor pagination that does not skip records sharing a timestamp.\",\"pending_work\":[{\"content\":\"Implement composite cursor encode/decode and the exclusive lexicographic page_after selection. Cover timestamp ties, final-page behavior, and malformed cursor input.\",\"kind\":\"pending_work\",\"metadata\":{\"handoff_sieve.source_id\":\"m8.0\"}}],\"receiver\":\"coder\",\"sender\":\"researcher\",\"tool_results\":[{\"content\":\"Baseline public suite: 6 passed. Manual tied-timestamp probe: expected ids evt-002, evt-004, evt-009 across the boundary; current stub has no result.\",\"kind\":\"tool_results\",\"metadata\":{\"handoff_sieve.source_id\":\"m9.0\"}}]}",
+          "output": "{\"pagination_py\":\"\\\"\\\"\\\"Activity-feed pagination API to be completed by the receiving agent.\\\"\\\"\\\"\\n\\nfrom __future__ import annotations\\n\\nimport base64\\nimport binascii\\nimport json\\nimport re\\nfrom collections.abc import Sequence\\nfrom dataclasses import dataclass\\nfrom datetime import datetime\\nfrom typing import Any\\n\\n\\n@dataclass(frozen=True, slots=True)\\nclass ActivityRow:\\n    \\\"\\\"\\\"One activity-feed row.\\\"\\\"\\\"\\n\\n    created_at: datetime\\n    id: str\\n    payload: Any = None\\n\\n\\n_CURSOR_RE = re.compile(r\\\"^[A-Za-z0-9_-]+={0,2}$\\\")\\n\\n\\ndef encode_cursor(row: ActivityRow) -> str:\\n    \\\"\\\"\\\"Return an opaque cursor representing ``row``'s pagination key.\\\"\\\"\\\"\\n\\n    value = json.dumps(\\n        [row.created_at.isoformat(), row.id],\\n        ensure_ascii=True,\\n        separators=(\\\",\\\", \\\":\\\"),\\n    ).encode(\\\"ascii\\\")\\n    return base64.urlsafe_b64encode(value).decode(\\\"ascii\\\").rstrip(\\\"=\\\")\\n\\n\\ndef decode_cursor(cursor: str) -> tuple[datetime, str]:\\n    \\\"\\\"\\\"Decode a cursor or raise ``ValueError`` when it is malformed.\\\"\\\"\\\"\\n\\n    if not isinstance(cursor, str) or not cursor or not _CURSOR_RE.fullmatch(cursor):\\n        raise ValueError(\\\"malformed cursor\\\")\\n\\n    padding = \\\"=\\\" * (-len(cursor) % 4)\\n    try:\\n        raw = base64.urlsafe_b64decode(cursor + padding)\\n        value = json.loads(raw.decode(\\\"utf-8\\\"))\\n    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:\\n        raise ValueError(\\\"malformed cursor\\\") from exc\\n\\n    if (\\n        not isinstance(value, list)\\n        or len(value) != 2\\n        or not isinstance(value[0], str)\\n        or not isinstance(value[1], str)\\n    ):\\n        raise ValueError(\\\"malformed cursor\\\")\\n\\n    timestamp = value[0]\\n    if timestamp.endswith(\\\"Z\\\"):\\n        timestamp = timestamp[:-1] + \\\"+00:00\\\"\\n    try:\\n        created_at = datetime.fromisoformat(timestamp)\\n    except ValueError as exc:\\n        raise ValueError(\\\"malformed cursor\\\") from exc\\n    return created_at, value[1]\\n\\n\\ndef page_after(\\n    rows: Sequence[ActivityRow],\\n    cursor: str | None,\\n    limit: int,\\n) -> tuple[list[ActivityRow], str | None]:\\n    \\\"\\\"\\\"Return the next ascending page and a cursor when more rows remain.\\n\\n    The returned cursor is ``None`` on the final page. The function must not\\n    mutate ``rows`` or any row payload. A malformed non-``None`` cursor raises\\n    ``ValueError``.\\n    \\\"\\\"\\\"\\n\\n    if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:\\n        raise ValueError(\\\"limit must be a positive integer\\\")\\n\\n    boundary = decode_cursor(cursor) if cursor is not None else None\\n    ordered = sorted(rows, key=lambda row: (row.created_at, row.id))\\n    if boundary is not None:\\n        ordered = [\\n            row\\n            for row in ordered\\n            if (row.created_at, row.id) > boundary\\n        ]\\n\\n    page = ordered[:limit]\\n    if len(ordered) <= limit or not page:\\n        return page, None\\n    return page, encode_cursor(page[-1])\"}",
+          "handoff_tokens": 633,
+          "acceptance": {
+            "checks": [
+              {
+                "id": "cursor_round_trip",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "malformed_cursor",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "page_size_1",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "page_size_7",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "page_size_13",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "terminal_page",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "input_immutability",
+                "passed": true,
+                "detail": null
+              }
+            ],
+            "overall": true,
+            "error": null,
+            "derived_blocking_issue_ids": null
+          },
+          "model_calls": 2,
+          "available_provider_tokens": 9386
+        }
+      ],
+      "actual_calls": 5
+    },
+    {
+      "task": "pe01_streaming_csv",
+      "variant": "category labels removed; content unchanged",
+      "synthetic": true,
+      "trials": 1,
+      "source_unchanged": true,
+      "records": [
+        {
+          "task": "pe01_streaming_csv",
+          "condition": "full_history",
+          "context": "{\"artifacts\":[{\"content\":{\"activation\":\"GET /reports?format=csv\",\"columns\":[\"id\",\"name\",\"total\"],\"endpoint_file\":\"src/task_app/reports/api.py\",\"regression_path\":\"GET /reports and GET /reports?format=json\",\"row_source\":\"ReportService.iter_rows()\",\"serializer_file\":\"src/task_app/reports/csv_response.py\",\"test_file\":\"tests/test_reports.py\"},\"media_type\":\"application/json\",\"metadata\":{},\"name\":\"csv-execution-map\"}],\"messages\":[{\"content\":[\"A future epic proposes XLSX exports with cell formatting, frozen headers, charts, and multiple worksheets. It is not part of the accepted CSV milestone.\",\"Another backlog item proposes rendering reports as PDF through a browser worker. No browser or PDF dependency should enter this task.\",\"The billing team may eventually meter export volume and retain usage records. Metering is not required for the report endpoint change.\",\"A mobile feature request asks for offline export downloads and background notifications. The current executor only changes the server response path.\",\"A product idea suggests saved export presets with names and ownership. Preset persistence has not been designed or accepted.\",\"There is an open discussion about moving old exports to object storage. This task streams the current request and creates no stored export artifact.\",\"Internationalized column labels were proposed for a later release. The first CSV format uses the existing stable field names.\",\"A roadmap note mentions custom delimiters and spreadsheet locale detection. Neither belongs to the accepted plan.\",\"The analytics backlog contains dashboard filters, scheduled emails, and cohort comparison. Those items do not change report row iteration.\",\"A speculative API v2 could use content negotiation instead of a query parameter. The current public endpoint remains v1.\"],\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":[\"The planning meeting reviewed release naming, owner rotations, screenshots, documentation examples, and a possible launch date.\",\"Several minutes covered whether the button should say Export, Download, or Save. UI copy does not affect the server contract in this task.\",\"A stakeholder asked for zipped exports containing several report types. That request was deferred.\",\"The team discussed using a job queue for multi-gigabyte exports. The accepted milestone handles the existing synchronous endpoint only.\",\"An observability proposal listed dashboards for queue depth, object storage size, and email delivery. None applies to the selected implementation.\",\"The support team supplied examples of old Excel versions and regional separators. The current CSV output remains comma-delimited UTF-8.\",\"A later meeting will decide retention policy. Streaming responses are not retained, so no decision is needed now.\",\"The release checklist includes changelog, screenshots, announcement review, and translation. These are unrelated to receiver code changes.\"],\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":[\"A load probe generated a 180 MB JSON response from a synthetic dataset and printed one progress line for each ten thousand records.\",\"A crawler collected documentation for five CSV libraries even though the accepted plan uses the standard library.\",\"The test runner listed twenty-four passing report tests and hundreds of unrelated passing tests from accounts and notifications.\",\"A memory sampler printed process RSS every second during an unrelated image export experiment.\",\"Formatting and lint commands completed without changes before the CSV serializer existed.\",\"A prototype wrote the entire CSV to a temporary file; it was discarded because the endpoint should stream directly.\",\"A spreadsheet application warning about automatic date conversion was recorded for documentation, not implementation.\",\"The API access log repeated successful JSON requests with different user agents and carries no additional acceptance decision.\"],\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"Keep the existing GET /reports JSON response byte-for-byte compatible when format is absent or json. CSV must be UTF-8, include a stable header, handle an empty result, and consume the row source once without list(), len(), rewind, or a second iteration.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"Activate CSV through the existing format query parameter with the value csv. Reuse ReportService.iter_rows() and stream serializer chunks directly from that iterator. Do not add XLSX, PDF, queues, temporary export files, or storage.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"ReportService.iter_rows() already yields dictionaries in the required column order. The current JSON path peaks at about 180 MB on the largest synthetic fixture because JSON still materializes; CSV can avoid that by consuming the iterator directly.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"The endpoint already validates format=json, authorizes report access, opens the service iterator, and has regression snapshots. A csv_response helper stub and content-type constant have been added but are not connected.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"A prototype called list(iter_rows()) before passing rows to csv.writer, which defeated streaming. A second prototype wrote a temp file, adding cleanup and disk use without a requirement. Both were rejected.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"Connect format=csv to csv_response, write the fixed id,name,total header, encode Unicode correctly, emit a header-only empty result, and add a single-pass sentinel test plus the existing JSON regression suite.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"Baseline: pytest tests/test_reports.py reports 24 passed. The provided OnePassRows fixture raises AssertionError if code asks for length, converts it to a list, or iterates it more than once.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]}],\"metadata\":{\"catalog_id\":\"PE-01\",\"fixture_status\":\"not_run\"},\"receiver\":\"executor\",\"sender\":\"planner\"}",
+          "output": "{\"api_py\":\"\\\"\\\"\\\"Small framework-neutral report endpoint used by the PE-01 fixture.\\\"\\\"\\\"\\n\\nfrom __future__ import annotations\\n\\nimport json\\nfrom collections.abc import Iterable, Mapping\\nfrom dataclasses import dataclass\\nfrom typing import Protocol\\n\\nfrom .csv_response import stream_csv\\n\\nJSON_CONTENT_TYPE = \\\"application/json; charset=utf-8\\\"\\n\\n\\nclass ReportService(Protocol):\\n    \\\"\\\"\\\"Existing service boundary supplied to the endpoint.\\\"\\\"\\\"\\n\\n    def iter_rows(self) -> Iterable[Mapping[str, object]]:\\n        \\\"\\\"\\\"Return report rows in service-defined order.\\\"\\\"\\\"\\n\\n\\n@dataclass(frozen=True, slots=True)\\nclass ReportResponse:\\n    \\\"\\\"\\\"Minimal response value whose body may be streamed.\\\"\\\"\\\"\\n\\n    content_type: str\\n    body: Iterable[bytes]\\n    streaming: bool\\n\\n    def read(self) -> bytes:\\n        \\\"\\\"\\\"Consume the response body for a transport or a test.\\\"\\\"\\\"\\n\\n        return b\\\"\\\".join(self.body)\\n\\n\\ndef _json_response(rows: Iterable[Mapping[str, object]]) -> ReportResponse:\\n    payload = json.dumps(\\n        list(rows),\\n        ensure_ascii=False,\\n        separators=(\\\",\\\", \\\":\\\"),\\n    ).encode(\\\"utf-8\\\")\\n    return ReportResponse(\\n        content_type=JSON_CONTENT_TYPE,\\n        body=(payload,),\\n        streaming=False,\\n    )\\n\\n\\ndef get_reports(\\n    service: ReportService,\\n    *,\\n    format: str | None = None,\\n) -> ReportResponse:\\n    \\\"\\\"\\\"Return the existing JSON report or the planned streaming CSV report.\\\"\\\"\\\"\\n\\n    selected_format = \\\"json\\\" if format is None else format\\n    rows = service.iter_rows()\\n    if selected_format == \\\"json\\\":\\n        return _json_response(rows)\\n    if selected_format == \\\"csv\\\":\\n        return ReportResponse(\\n            content_type=\\\"text/csv; charset=utf-8\\\",\\n            body=stream_csv(rows),\\n            streaming=True,\\n        )\\n    raise ValueError(\\\"unsupported report format\\\")\\n\",\"csv_response_py\":\"\\\"\\\"\\\"Streaming CSV serialization to be completed by the receiving agent.\\\"\\\"\\\"\\n\\nfrom __future__ import annotations\\n\\nimport csv\\nimport io\\nfrom collections.abc import Iterable, Iterator, Mapping\\n\\nCSV_COLUMNS = (\\\"id\\\", \\\"name\\\", \\\"total\\\")\\nCSV_CONTENT_TYPE = \\\"text/csv; charset=utf-8\\\"\\n\\n\\ndef stream_csv(rows: Iterable[Mapping[str, object]]) -> Iterator[bytes]:\\n    \\\"\\\"\\\"Yield a UTF-8 CSV header and rows without materializing ``rows``.\\\"\\\"\\\"\\n\\n    header = io.StringIO(newline=\\\"\\\")\\n    csv.writer(header).writerow(CSV_COLUMNS)\\n    yield header.getvalue().encode(\\\"utf-8\\\")\\n\\n    for row in rows:\\n        output = io.StringIO(newline=\\\"\\\")\\n        csv.writer(output).writerow(row[column] for column in CSV_COLUMNS)\\n        yield output.getvalue().encode(\\\"utf-8\\\")\\n\"}",
+          "handoff_tokens": 1536,
+          "acceptance": {
+            "checks": [
+              {
+                "id": "csv_normal",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "csv_empty",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "csv_unicode_quoting",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "lazy_single_pass",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "json_default_snapshot",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "json_explicit_snapshot",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "unsupported_format",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "input_immutability",
+                "passed": true,
+                "detail": null
+              }
+            ],
+            "overall": true,
+            "error": null,
+            "derived_blocking_issue_ids": null
+          },
+          "model_calls": 1,
+          "available_provider_tokens": 7141
+        },
+        {
+          "task": "pe01_streaming_csv",
+          "condition": "receiver_aware_summary",
+          "context": "Receiver: executor\n\nGoal:\nExecute the accepted plan for streaming CSV report output while preserving the existing JSON response.\n\nAccepted behavior and constraints:\n- Endpoint: existing `GET /reports`.\n- CSV activation: `GET /reports?format=csv`, using the existing `format` query parameter.\n- `format` absent or `json` must preserve the existing JSON response byte-for-byte.\n- CSV must be UTF-8, comma-delimited, and use the stable header/column order: `id,name,total`.\n- Empty results must emit a header-only CSV response.\n- Reuse `ReportService.iter_rows()`.\n- Consume the row source exactly once, directly from the iterator. Do not use `list()`, `len()`, rewind, or a second iteration.\n- Do not add XLSX, PDF, queues, temporary files, object storage, metering, presets, localization, custom delimiters, API v2 behavior, or other deferred features.\n- The current endpoint is synchronous and server-side only.\n\nCurrent decisions and evidence:\n- `ReportService.iter_rows()` already yields dictionaries in the required column order.\n- Existing JSON behavior still materializes and peaked around 180 MB on the largest synthetic fixture; CSV should consume the iterator directly.\n- The endpoint already validates `format=json`, authorizes access, opens the service iterator, and has JSON regression snapshots.\n- A `csv_response` helper stub and content-type constant already exist but are not connected.\n- Baseline: `pytest tests/test_reports.py` reported 24 passed.\n- `OnePassRows` raises `AssertionError` on length access, list conversion, or multiple iteration.\n\nArtifacts:\n- Artifact: `csv-execution-map`\n- Endpoint: `src/task_app/reports/api.py`\n- Serializer: `src/task_app/reports/csv_response.py`\n- Tests: `tests/test_reports.py`\n- Activation: `GET /reports?format=csv`\n- Row source: `ReportService.iter_rows()`\n- Columns: `id`, `name`, `total`\n- JSON regression paths: `GET /reports` and `GET /reports?format=json`\n- Catalog ID: `PE-01`\n- Fixture status: `not_run`\n\nCompleted work:\n- Planning and acceptance decisions are established.\n- CSV helper stub and content-type constant were added.\n- Existing JSON path and regression coverage are identified.\n- No CSV implementation connection or acceptance tests are confirmed complete.\n\nFailed/rejected approaches to avoid:\n- Calling `list(iter_rows())` before serialization defeats streaming.\n- Writing the entire CSV to a temporary file adds disk use and cleanup without a requirement.\n- Unrelated formatting/lint completion occurred before the serializer existed and is not evidence of CSV correctness.\n\nPending work:\n- Connect `format=csv` in `src/task_app/reports/api.py` to `csv_response`.\n- Stream serializer chunks directly from `ReportService.iter_rows()`.\n- Emit fixed `id,name,total` header, including for empty results.\n- Ensure Unicode is encoded correctly as UTF-8.\n- Add a single-pass sentinel test using `OnePassRows`.\n- Run the existing JSON regression suite and CSV tests; fixture status is currently `not_run`.",
+          "output": "{\"api_py\":\"\\\"\\\"\\\"Small framework-neutral report endpoint used by the PE-01 fixture.\\\"\\\"\\\"\\n\\nfrom __future__ import annotations\\n\\nimport json\\nfrom collections.abc import Iterable, Mapping\\nfrom dataclasses import dataclass\\nfrom typing import Protocol\\n\\nfrom .csv_response import CSV_CONTENT_TYPE, stream_csv\\n\\nJSON_CONTENT_TYPE = \\\"application/json; charset=utf-8\\\"\\n\\n\\nclass ReportService(Protocol):\\n    \\\"\\\"\\\"Existing service boundary supplied to the endpoint.\\\"\\\"\\\"\\n\\n    def iter_rows(self) -> Iterable[Mapping[str, object]]:\\n        \\\"\\\"\\\"Return report rows in service-defined order.\\\"\\\"\\\"\\n\\n\\n@dataclass(frozen=True, slots=True)\\nclass ReportResponse:\\n    \\\"\\\"\\\"Minimal response value whose body may be streamed.\\\"\\\"\\\"\\n\\n    content_type: str\\n    body: Iterable[bytes]\\n    streaming: bool\\n\\n    def read(self) -> bytes:\\n        \\\"\\\"\\\"Consume the response body for a transport or a test.\\\"\\\"\\\"\\n\\n        return b\\\"\\\".join(self.body)\\n\\n\\ndef _json_response(rows: Iterable[Mapping[str, object]]) -> ReportResponse:\\n    payload = json.dumps(\\n        list(rows),\\n        ensure_ascii=False,\\n        separators=(\\\",\\\", \\\":\\\"),\\n    ).encode(\\\"utf-8\\\")\\n    return ReportResponse(\\n        content_type=JSON_CONTENT_TYPE,\\n        body=(payload,),\\n        streaming=False,\\n    )\\n\\n\\ndef get_reports(\\n    service: ReportService,\\n    *,\\n    format: str | None = None,\\n) -> ReportResponse:\\n    \\\"\\\"\\\"Return the existing JSON report or the planned streaming CSV report.\\\"\\\"\\\"\\n\\n    selected_format = \\\"json\\\" if format is None else format\\n    rows = service.iter_rows()\\n    if selected_format == \\\"json\\\":\\n        return _json_response(rows)\\n    if selected_format == \\\"csv\\\":\\n        return ReportResponse(\\n            content_type=CSV_CONTENT_TYPE,\\n            body=stream_csv(rows),\\n            streaming=True,\\n        )\\n    raise ValueError(\\\"unsupported report format\\\")\\n\",\"csv_response_py\":\"\\\"\\\"\\\"Streaming CSV serialization to be completed by the receiving agent.\\\"\\\"\\\"\\n\\nfrom __future__ import annotations\\n\\nimport csv\\nfrom collections.abc import Iterable, Iterator, Mapping\\nfrom io import StringIO\\n\\nCSV_COLUMNS = (\\\"id\\\", \\\"name\\\", \\\"total\\\")\\nCSV_CONTENT_TYPE = \\\"text/csv; charset=utf-8\\\"\\n\\n\\ndef stream_csv(rows: Iterable[Mapping[str, object]]) -> Iterator[bytes]:\\n    \\\"\\\"\\\"Yield a UTF-8 CSV header and rows without materializing ``rows``.\\\"\\\"\\\"\\n\\n    def encode_row(values: Iterable[object]) -> bytes:\\n        buffer = StringIO(newline=\\\"\\\")\\n        writer = csv.writer(buffer, lineterminator=\\\"\\\\r\\\\n\\\")\\n        writer.writerow(values)\\n        return buffer.getvalue().encode(\\\"utf-8\\\")\\n\\n    yield encode_row(CSV_COLUMNS)\\n    for row in rows:\\n        yield encode_row(row[column] for column in CSV_COLUMNS)\\n\"}",
+          "handoff_tokens": 745,
+          "acceptance": {
+            "checks": [
+              {
+                "id": "csv_normal",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "csv_empty",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "csv_unicode_quoting",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "lazy_single_pass",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "json_default_snapshot",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "json_explicit_snapshot",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "unsupported_format",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "input_immutability",
+                "passed": true,
+                "detail": null
+              }
+            ],
+            "overall": true,
+            "error": null,
+            "derived_blocking_issue_ids": null
+          },
+          "model_calls": 2,
+          "available_provider_tokens": 8927
+        },
+        {
+          "task": "pe01_streaming_csv",
+          "condition": "model_handoff",
+          "compilation": {
+            "packet": {
+              "sender": "planner",
+              "receiver": "executor",
+              "goal": "Execute the accepted plan for streaming CSV report output while preserving the existing JSON response.",
+              "constraints": [
+                {
+                  "role": "user",
+                  "content": "Keep the existing GET /reports JSON response byte-for-byte compatible when format is absent or json. CSV must be UTF-8, include a stable header, handle an empty result, and consume the row source once without list(), len(), rewind, or a second iteration.",
+                  "kind": "constraints",
+                  "tags": [],
+                  "metadata": {
+                    "handoff_sieve.source_id": "m3.0"
+                  }
+                }
+              ],
+              "decisions": [
+                {
+                  "role": "user",
+                  "content": "Activate CSV through the existing format query parameter with the value csv. Reuse ReportService.iter_rows() and stream serializer chunks directly from that iterator. Do not add XLSX, PDF, queues, temporary export files, or storage.",
+                  "kind": "decisions",
+                  "tags": [],
+                  "metadata": {
+                    "handoff_sieve.source_id": "m4.0"
+                  }
+                }
+              ],
+              "evidence": [
+                {
+                  "role": "user",
+                  "content": "ReportService.iter_rows() already yields dictionaries in the required column order. The current JSON path peaks at about 180 MB on the largest synthetic fixture because JSON still materializes; CSV can avoid that by consuming the iterator directly.",
+                  "kind": "evidence",
+                  "tags": [],
+                  "metadata": {
+                    "handoff_sieve.source_id": "m5.0"
+                  }
+                }
+              ],
+              "completed_work": [
+                {
+                  "role": "user",
+                  "content": "The endpoint already validates format=json, authorizes report access, opens the service iterator, and has regression snapshots. A csv_response helper stub and content-type constant have been added but are not connected.",
+                  "kind": "completed_work",
+                  "tags": [],
+                  "metadata": {
+                    "handoff_sieve.source_id": "m6.0"
+                  }
+                }
+              ],
+              "failed_attempts": [
+                {
+                  "role": "user",
+                  "content": "A prototype called list(iter_rows()) before passing rows to csv.writer, which defeated streaming. A second prototype wrote a temp file, adding cleanup and disk use without a requirement. Both were rejected.",
+                  "kind": "failed_attempts",
+                  "tags": [],
+                  "metadata": {
+                    "handoff_sieve.source_id": "m7.0"
+                  }
+                }
+              ],
+              "pending_work": [
+                {
+                  "role": "user",
+                  "content": "Connect format=csv to csv_response, write the fixed id,name,total header, encode Unicode correctly, emit a header-only empty result, and add a single-pass sentinel test plus the existing JSON regression suite.",
+                  "kind": "pending_work",
+                  "tags": [],
+                  "metadata": {
+                    "handoff_sieve.source_id": "m8.0"
+                  }
+                }
+              ],
+              "artifacts": [
+                {
+                  "name": "csv-execution-map",
+                  "content": {
+                    "endpoint_file": "src/task_app/reports/api.py",
+                    "serializer_file": "src/task_app/reports/csv_response.py",
+                    "test_file": "tests/test_reports.py",
+                    "activation": "GET /reports?format=csv",
+                    "row_source": "ReportService.iter_rows()",
+                    "columns": [
+                      "id",
+                      "name",
+                      "total"
+                    ],
+                    "regression_path": "GET /reports and GET /reports?format=json"
+                  },
+                  "media_type": "application/json",
+                  "metadata": {
+                    "handoff_sieve.source_id": "a0"
+                  }
+                }
+              ],
+              "tool_results": [
+                {
+                  "role": "user",
+                  "content": "Baseline: pytest tests/test_reports.py reports 24 passed. The provided OnePassRows fixture raises AssertionError if code asks for length, converts it to a list, or iterates it more than once.",
+                  "kind": "tool_results",
+                  "tags": [],
+                  "metadata": {
+                    "handoff_sieve.source_id": "m9.0"
+                  }
+                }
+              ]
+            },
+            "report": {
+              "schema_version": "1",
+              "handoff_id": "d5512e01b4c94d48ae96ffcd2cd6c4d0",
+              "request_id": null,
+              "started_at": "2026-10-10T15:17:53.215834Z",
+              "completed_at": "2026-10-10T15:17:53.216870Z",
+              "duration_ms": 1.0633000638335943,
+              "status": "passed",
+              "failure_code": null,
+              "failed_policy": null,
+              "sender": "planner",
+              "receiver": "executor",
+              "token_counter": "approx_utf8",
+              "config_fingerprint": "25d92ff20a13c4a518eb72bcf5b459dc339afcbb759b23228ba47dcc35929eb2",
+              "original_tokens": 764,
+              "transmitted_tokens": 764,
+              "removed_messages": 0,
+              "redactions": 0,
+              "duplicates_removed": 0,
+              "protected_messages": 0,
+              "summarizer_input_tokens": 0,
+              "summarizer_output_tokens": 0,
+              "summarizer_provider_input_tokens": null,
+              "summarizer_provider_output_tokens": null,
+              "events": [
+                {
+                  "policy": "receiver_contract",
+                  "policy_version": "1",
+                  "action": "compiled",
+                  "count": 0,
+                  "details": {
+                    "max_tokens": 1050,
+                    "packet_tokens": 713,
+                    "required_tokens": 713,
+                    "preferred_omitted_for_budget": {}
+                  }
+                },
+                {
+                  "policy": "model_selector",
+                  "policy_version": "1",
+                  "action": "selected",
+                  "count": 8,
+                  "details": {
+                    "source_units": 11,
+                    "model_calls": 1
+                  }
+                }
+              ],
+              "warnings": []
+            },
+            "source_tokens": 1579,
+            "packet_tokens": 713,
+            "omitted_count": 3,
+            "budget": {
+              "stage": "pipeline_output",
+              "token_counter": "approx_utf8",
+              "max_tokens": 1050,
+              "required_tokens": 713,
+              "packet_tokens": 713,
+              "preferred_selected": {},
+              "preferred_omitted_before_pipeline": {},
+              "preferred_omitted_after_pipeline": {}
+            },
+            "selection": {
+              "source_unit_count": 11,
+              "selected_source_ids": [
+                "m3.0",
+                "m4.0",
+                "m5.0",
+                "m6.0",
+                "m8.0",
+                "m7.0",
+                "m9.0",
+                "a0"
+              ],
+              "budget_omitted_source_ids": [],
+              "unselected_source_ids": [
+                "m0.0",
+                "m1.0",
+                "m2.0"
+              ],
+              "coverage": [
+                {
+                  "need_index": 0,
+                  "source_ids": [
+                    "m3.0",
+                    "m4.0",
+                    "m6.0"
+                  ]
+                },
+                {
+                  "need_index": 1,
+                  "source_ids": [
+                    "m4.0",
+                    "m5.0",
+                    "m9.0"
+                  ]
+                },
+                {
+                  "need_index": 2,
+                  "source_ids": [
+                    "m8.0",
+                    "m7.0"
+                  ]
+                },
+                {
+                  "need_index": 3,
+                  "source_ids": [
+                    "a0",
+                    "m9.0",
+                    "m6.0"
+                  ]
+                }
+              ]
+            },
+            "plan": {
+              "selections": [
+                {
+                  "source_id": "m3.0",
+                  "section": "constraints",
+                  "essential": true
+                },
+                {
+                  "source_id": "m4.0",
+                  "section": "decisions",
+                  "essential": true
+                },
+                {
+                  "source_id": "m5.0",
+                  "section": "evidence",
+                  "essential": true
+                },
+                {
+                  "source_id": "m6.0",
+                  "section": "completed_work",
+                  "essential": true
+                },
+                {
+                  "source_id": "m8.0",
+                  "section": "pending_work",
+                  "essential": true
+                },
+                {
+                  "source_id": "m7.0",
+                  "section": "failed_attempts",
+                  "essential": true
+                },
+                {
+                  "source_id": "m9.0",
+                  "section": "tool_results",
+                  "essential": true
+                },
+                {
+                  "source_id": "a0",
+                  "section": "artifacts",
+                  "essential": true
+                }
+              ],
+              "coverage": [
+                {
+                  "need_index": 0,
+                  "source_ids": [
+                    "m3.0",
+                    "m4.0",
+                    "m6.0"
+                  ]
+                },
+                {
+                  "need_index": 1,
+                  "source_ids": [
+                    "m4.0",
+                    "m5.0",
+                    "m9.0"
+                  ]
+                },
+                {
+                  "need_index": 2,
+                  "source_ids": [
+                    "m8.0",
+                    "m7.0"
+                  ]
+                },
+                {
+                  "need_index": 3,
+                  "source_ids": [
+                    "a0",
+                    "m9.0",
+                    "m6.0"
+                  ]
+                }
+              ],
+              "missing_needs": []
+            },
+            "selector_usage": {
+              "model": "gpt-5.6-sol",
+              "response_id": "resp_0c6039c7bcf88a45016aca56f6c37087d28bf8b9e6ab973935",
+              "input_tokens": 2006,
+              "output_tokens": 717,
+              "total_tokens": 2723,
+              "seconds": 46.11833409999963,
+              "model_calls": 1
+            }
+          },
+          "context": "{\"artifacts\":[{\"content\":{\"activation\":\"GET /reports?format=csv\",\"columns\":[\"id\",\"name\",\"total\"],\"endpoint_file\":\"src/task_app/reports/api.py\",\"regression_path\":\"GET /reports and GET /reports?format=json\",\"row_source\":\"ReportService.iter_rows()\",\"serializer_file\":\"src/task_app/reports/csv_response.py\",\"test_file\":\"tests/test_reports.py\"},\"media_type\":\"application/json\",\"metadata\":{\"handoff_sieve.source_id\":\"a0\"},\"name\":\"csv-execution-map\"}],\"completed_work\":[{\"content\":\"The endpoint already validates format=json, authorizes report access, opens the service iterator, and has regression snapshots. A csv_response helper stub and content-type constant have been added but are not connected.\",\"kind\":\"completed_work\",\"metadata\":{\"handoff_sieve.source_id\":\"m6.0\"}}],\"constraints\":[{\"content\":\"Keep the existing GET /reports JSON response byte-for-byte compatible when format is absent or json. CSV must be UTF-8, include a stable header, handle an empty result, and consume the row source once without list(), len(), rewind, or a second iteration.\",\"kind\":\"constraints\",\"metadata\":{\"handoff_sieve.source_id\":\"m3.0\"}}],\"decisions\":[{\"content\":\"Activate CSV through the existing format query parameter with the value csv. Reuse ReportService.iter_rows() and stream serializer chunks directly from that iterator. Do not add XLSX, PDF, queues, temporary export files, or storage.\",\"kind\":\"decisions\",\"metadata\":{\"handoff_sieve.source_id\":\"m4.0\"}}],\"evidence\":[{\"content\":\"ReportService.iter_rows() already yields dictionaries in the required column order. The current JSON path peaks at about 180 MB on the largest synthetic fixture because JSON still materializes; CSV can avoid that by consuming the iterator directly.\",\"kind\":\"evidence\",\"metadata\":{\"handoff_sieve.source_id\":\"m5.0\"}}],\"failed_attempts\":[{\"content\":\"A prototype called list(iter_rows()) before passing rows to csv.writer, which defeated streaming. A second prototype wrote a temp file, adding cleanup and disk use without a requirement. Both were rejected.\",\"kind\":\"failed_attempts\",\"metadata\":{\"handoff_sieve.source_id\":\"m7.0\"}}],\"goal\":\"Execute the accepted plan for streaming CSV report output while preserving the existing JSON response.\",\"pending_work\":[{\"content\":\"Connect format=csv to csv_response, write the fixed id,name,total header, encode Unicode correctly, emit a header-only empty result, and add a single-pass sentinel test plus the existing JSON regression suite.\",\"kind\":\"pending_work\",\"metadata\":{\"handoff_sieve.source_id\":\"m8.0\"}}],\"receiver\":\"executor\",\"sender\":\"planner\",\"tool_results\":[{\"content\":\"Baseline: pytest tests/test_reports.py reports 24 passed. The provided OnePassRows fixture raises AssertionError if code asks for length, converts it to a list, or iterates it more than once.\",\"kind\":\"tool_results\",\"metadata\":{\"handoff_sieve.source_id\":\"m9.0\"}}]}",
+          "output": "{\"api_py\":\"\\\"\\\"\\\"Small framework-neutral report endpoint used by the PE-01 fixture.\\\"\\\"\\\"\\n\\nfrom __future__ import annotations\\n\\nimport json\\nfrom collections.abc import Iterable, Mapping\\nfrom dataclasses import dataclass\\nfrom typing import Protocol\\n\\nfrom .csv_response import CSV_CONTENT_TYPE, stream_csv\\n\\nJSON_CONTENT_TYPE = \\\"application/json; charset=utf-8\\\"\\n\\n\\nclass ReportService(Protocol):\\n    \\\"\\\"\\\"Existing service boundary supplied to the endpoint.\\\"\\\"\\\"\\n\\n    def iter_rows(self) -> Iterable[Mapping[str, object]]:\\n        \\\"\\\"\\\"Return report rows in service-defined order.\\\"\\\"\\\"\\n\\n\\n@dataclass(frozen=True, slots=True)\\nclass ReportResponse:\\n    \\\"\\\"\\\"Minimal response value whose body may be streamed.\\\"\\\"\\\"\\n\\n    content_type: str\\n    body: Iterable[bytes]\\n    streaming: bool\\n\\n    def read(self) -> bytes:\\n        \\\"\\\"\\\"Consume the response body for a transport or a test.\\\"\\\"\\\"\\n\\n        return b\\\"\\\".join(self.body)\\n\\n\\ndef _json_response(rows: Iterable[Mapping[str, object]]) -> ReportResponse:\\n    payload = json.dumps(\\n        list(rows),\\n        ensure_ascii=False,\\n        separators=(\\\",\\\", \\\":\\\"),\\n    ).encode(\\\"utf-8\\\")\\n    return ReportResponse(\\n        content_type=JSON_CONTENT_TYPE,\\n        body=(payload,),\\n        streaming=False,\\n    )\\n\\n\\ndef get_reports(\\n    service: ReportService,\\n    *,\\n    format: str | None = None,\\n) -> ReportResponse:\\n    \\\"\\\"\\\"Return the existing JSON report or the planned streaming CSV report.\\\"\\\"\\\"\\n\\n    selected_format = \\\"json\\\" if format is None else format\\n    rows = service.iter_rows()\\n    if selected_format == \\\"json\\\":\\n        return _json_response(rows)\\n    if selected_format == \\\"csv\\\":\\n        return ReportResponse(\\n            content_type=CSV_CONTENT_TYPE,\\n            body=stream_csv(rows),\\n            streaming=True,\\n        )\\n    raise ValueError(\\\"unsupported report format\\\")\\n\",\"csv_response_py\":\"\\\"\\\"\\\"Streaming CSV serialization to be completed by the receiving agent.\\\"\\\"\\\"\\n\\nfrom __future__ import annotations\\n\\nimport csv\\nimport io\\nfrom collections.abc import Iterable, Iterator, Mapping\\n\\nCSV_COLUMNS = (\\\"id\\\", \\\"name\\\", \\\"total\\\")\\nCSV_CONTENT_TYPE = \\\"text/csv; charset=utf-8\\\"\\n\\n\\ndef stream_csv(rows: Iterable[Mapping[str, object]]) -> Iterator[bytes]:\\n    \\\"\\\"\\\"Yield a UTF-8 CSV header and rows without materializing ``rows``.\\\"\\\"\\\"\\n\\n    buffer = io.StringIO(newline=\\\"\\\")\\n    writer = csv.writer(buffer, lineterminator=\\\"\\\\r\\\\n\\\")\\n\\n    writer.writerow(CSV_COLUMNS)\\n    yield buffer.getvalue().encode(\\\"utf-8\\\")\\n\\n    for row in rows:\\n        buffer.seek(0)\\n        buffer.truncate(0)\\n        writer.writerow(row[column] for column in CSV_COLUMNS)\\n        yield buffer.getvalue().encode(\\\"utf-8\\\")\\n\"}",
+          "handoff_tokens": 713,
+          "acceptance": {
+            "checks": [
+              {
+                "id": "csv_normal",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "csv_empty",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "csv_unicode_quoting",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "lazy_single_pass",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "json_default_snapshot",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "json_explicit_snapshot",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "unsupported_format",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "input_immutability",
+                "passed": true,
+                "detail": null
+              }
+            ],
+            "overall": true,
+            "error": null,
+            "derived_blocking_issue_ids": null
+          },
+          "model_calls": 2,
+          "available_provider_tokens": 9498
+        }
+      ],
+      "actual_calls": 5
+    },
+    {
+      "task": "rr01_cursor_review",
+      "variant": "category labels removed; content unchanged",
+      "synthetic": true,
+      "trials": 1,
+      "source_unchanged": true,
+      "records": [
+        {
+          "task": "rr01_cursor_review",
+          "condition": "full_history",
+          "context": "{\"artifacts\":[{\"content\":\"diff --git a/src/task_app/pagination.py b/src/task_app/pagination.py\\n@@\\n def page_after(rows, cursor, limit):\\n     boundary = decode_cursor(cursor) if cursor else None\\n     ordered = sorted(rows, key=lambda row: (row.created_at, row.id))\\n     if boundary is not None:\\n         ordered = [row for row in ordered if row.created_at > boundary.created_at]\\n     page = ordered[:limit]\\n     return page, encode_cursor(page[-1]) if page else None\\n\",\"media_type\":\"text/x-diff\",\"metadata\":{},\"name\":\"cursor_patch_v3\"},{\"content\":{\"candidate_id\":\"cursor_patch_v3\",\"issue_ids\":{\"cursor_tie_skip\":\"one or more rows sharing a boundary timestamp are never returned\",\"inclusive_duplicate\":\"the boundary row appears again on the next page\",\"input_mutated\":\"reviewed pagination changes the caller-owned row list\",\"malformed_cursor_accepted\":\"a malformed cursor does not raise ValueError\"}},\"media_type\":\"application/json\",\"metadata\":{},\"name\":\"cursor-acceptance-registry\"}],\"messages\":[{\"content\":[\"One article compares keyset and offset pagination for social feeds, but its examples use unique integer ids and do not review the active patch.\",\"A database manual describes server-side cursors that hold a transaction open. The application uses stateless opaque cursors instead.\",\"A vendor blog recommends descending indexes for reverse chronological timelines. The accepted endpoint remains ascending for this review.\",\"A search result discusses total-page counts and approximate statistics. Page counts are not in the candidate change.\",\"Several snippets cover GraphQL connection naming, edges, and nodes. The local API shape is already fixed and unrelated to the defect under review.\",\"An ORM tutorial implements offset and limit with eager loading. The project does not use that ORM.\",\"A caching article suggests putting the entire response behind a CDN. Cache behavior is outside the review acceptance rules.\",\"A mobile performance post recommends fetching three pages ahead. Prefetch policy does not affect cursor correctness.\",\"A design note considers showing page numbers in the UI. That idea was deferred.\",\"A benchmarking transcript lists timings for several indexes but contains no correctness evidence about tied timestamps.\"],\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":[\"cursor_patch_v1 used offset values encoded as text and was abandoned before review.\",\"cursor_patch_v2 used the composite pair and handled ties, but it changed the cursor codec and was not submitted.\",\"A scratch diff named cursor_patch_experiment sorted descending and targeted a different endpoint.\",\"An uncommitted test prototype expected reverse navigation, which is not part of this candidate.\",\"A reviewer comment on v1 mentioned query-plan cost; that comment does not establish a blocker for v3.\",\"The archive also contains a corrected composite implementation prepared after the candidate, but the reviewer must assess the explicitly named active artifact rather than that later draft.\"],\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":[\"The public suite ran six unique-timestamp examples successfully because none placed a page boundary inside a timestamp tie.\",\"A formatter changed no files in the candidate patch.\",\"Static analysis accepted the timestamp comparison as type-correct.\",\"An unrelated feed serialization suite reported twelve passing tests.\",\"The fixture generator printed a line for every generated row and repeated timestamp; those routine lines contain no separate decision.\",\"A query planner used the existing created_at index and reported a low estimated cost, which does not prove row completeness.\",\"The test collector also listed account, billing, report, and notification modules that the patch never touches.\",\"A documentation link checker completed successfully and is irrelevant to merge readiness.\"],\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"Review only candidate cursor_patch_v3. A merge-ready patch must preserve the opaque public cursor, return every row exactly once in ascending (created_at, id) order, use an exclusive boundary, raise ValueError for malformed cursors, and leave input rows unchanged. Report blockers only with registered ids: cursor_tie_skip, inclusive_duplicate, malformed_cursor_accepted, input_mutated.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"The accepted design uses the pair (created_at, id) as the cursor key and compares row pairs lexicographically. created_at-only pagination was rejected because created_at is not unique.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"The ungraded boundary fixture contains evt-002, evt-004, and evt-009 at the same timestamp, in ascending id order, and uses limit=1. Its recorded first page contains evt-002 and a cursor produced from that row. The remaining input rows and the candidate diff are available for the reviewer to determine the next-page behavior. Separate raw observations show malformed input raises ValueError and the caller-owned input list is unchanged.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"The candidate diff applies cleanly, formatting passes, and the six existing tests with unique timestamps pass. The tied-row review probe and registered blocker mapping are ready.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"Earlier v1 offset code and the unsubmitted v2 codec rewrite are not the review target. Reviewing either would produce a verdict for the wrong artifact.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"Determine whether cursor_patch_v3 is merge-ready under the registered acceptance rules and return its candidate id, verdict, and complete blocker id list.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]},{\"content\":\"Public tests: 6 passed, but every public fixture uses unique timestamps. The tied-timestamp boundary fixture has been prepared but no pass/fail conclusion or blocker mapping has been recorded; review it against the attached candidate and acceptance registry.\",\"kind\":\"context\",\"metadata\":{},\"role\":\"user\",\"tags\":[]}],\"metadata\":{\"catalog_id\":\"RR-01\",\"fixture_status\":\"not_run\"},\"receiver\":\"reviewer\",\"sender\":\"researcher\"}",
+          "output": "{\"candidate_id\":\"cursor_patch_v3\",\"verdict\":\"request_changes\",\"blocking_issue_ids\":[\"cursor_tie_skip\"]}",
+          "handoff_tokens": 1570,
+          "acceptance": {
+            "checks": [
+              {
+                "id": "reviews_active_candidate",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "verdict_matches_probe",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "blocker_set_matches_probe",
+                "passed": true,
+                "detail": null
+              }
+            ],
+            "overall": true,
+            "error": null,
+            "derived_blocking_issue_ids": [
+              "cursor_tie_skip"
+            ]
+          },
+          "model_calls": 1,
+          "available_provider_tokens": 6425
+        },
+        {
+          "task": "rr01_cursor_review",
+          "condition": "receiver_aware_summary",
+          "context": "Receiver: reviewer\n\nGoal:\n- Review only active candidate cursor_patch_v3 and determine merge readiness under the registered acceptance rules.\n- Final review must return candidate id, verdict, and complete blocker id list. Do not assess superseded artifacts.\n\nAcceptance constraints:\n- Preserve the opaque public cursor and existing codec/API.\n- Cursor key is the pair (created_at, id); compare pairs lexicographically.\n- Return every row exactly once in ascending (created_at, id) order.\n- Use an exclusive boundary.\n- Raise ValueError for malformed cursors.\n- Leave caller-owned input rows/list unchanged.\n- Registered blockers only:\n  - cursor_tie_skip: one or more rows sharing a boundary timestamp are never returned\n  - inclusive_duplicate: boundary row appears again on next page\n  - malformed_cursor_accepted: malformed cursor does not raise ValueError\n  - input_mutated: reviewed pagination changes caller-owned row list\n\nActive artifact:\n- cursor_patch_v3\n- Diff in src/task_app/pagination.py:\n  ```\n  def page_after(rows, cursor, limit):\n      boundary = decode_cursor(cursor) if cursor else None\n      ordered = sorted(rows, key=lambda row: (row.created_at, row.id))\n      if boundary is not None:\n          ordered = [row for row in ordered if row.created_at > boundary.created_at]\n      page = ordered[:limit]\n      return page, encode_cursor(page[-1]) if page else None\n  ```\n- Candidate diff applies cleanly.\n\nRelevant evidence:\n- Public suite: 6 passed, but all fixtures use unique timestamps and do not exercise tied boundaries.\n- Static analysis accepted timestamp comparison as type-correct.\n- Formatting passed; formatter changed no candidate files.\n- Separate raw observations: malformed input raises ValueError; caller-owned input list is unchanged. These observations still need to be considered alongside the registered mapping.\n- Ungraded boundary fixture: evt-002, evt-004, evt-009 share a timestamp, are ordered by ascending id, and use limit=1. First page contains evt-002 and a cursor encoded from that row. Remaining rows and candidate diff are available for next-page determination.\n- Tied-row review probe and blocker mapping are ready.\n- Query-plan/index cost evidence is not correctness evidence.\n\nCurrent review state:\n- No pass/fail conclusion or blocker mapping has yet been recorded for the tied-timestamp fixture.\n- Inspect next-page behavior specifically against pairwise exclusive semantics and determine all applicable registered blocker ids.\n- Complete verdict for cursor_patch_v3 only.\n\nFailed/superseded approaches to avoid:\n- cursor_patch_v1: offset values encoded as text; abandoned before review.\n- cursor_patch_v2: composite pair/tie handling but changed codec; not submitted.\n- cursor_patch_experiment: descending order and different endpoint.\n- Uncommitted reverse-navigation test prototype: out of scope.\n- Later corrected composite implementation in archive: do not substitute for active candidate.\n- Do not infer correctness from unique-timestamp tests, query cost, unrelated suites, or irrelevant research.\n\nArtifact identities:\n- Candidate: cursor_patch_v3\n- Registry: cursor-acceptance-registry\n- Catalog: RR-01\n- Fixture status: not_run",
+          "output": "{\"candidate_id\":\"cursor_patch_v3\",\"verdict\":\"request_changes\",\"blocking_issue_ids\":[\"cursor_tie_skip\"]}",
+          "handoff_tokens": 799,
+          "acceptance": {
+            "checks": [
+              {
+                "id": "reviews_active_candidate",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "verdict_matches_probe",
+                "passed": true,
+                "detail": null
+              },
+              {
+                "id": "blocker_set_matches_probe",
+                "passed": true,
+                "detail": null
+              }
+            ],
+            "overall": true,
+            "error": null,
+            "derived_blocking_issue_ids": [
+              "cursor_tie_skip"
+            ]
+          },
+          "model_calls": 2,
+          "available_provider_tokens": 8155
+        },
+        {
+          "task": "rr01_cursor_review",
+          "condition": "model_handoff",
+          "acceptance": {
+            "overall": false,
+            "error_type": "ContractError"
+          },
+          "model_calls": 1,
+          "available_provider_tokens": 3138
+        }
+      ],
+      "actual_calls": 4
+    }
+  ],
+  "actual_calls": 14
+}

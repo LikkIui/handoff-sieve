@@ -5,6 +5,11 @@ receiver's needs; HandoffSieve recognizes explicit state categories, keeps the
 requested state, checks the budget, and emits a typed packet. It does not call
 a model to decide what the goal means.
 
+The opt-in [`0.4.0a1` model path](model-handoff.md) adds natural-language
+`ReceiverContract.needs`, goal-aware selection from ordinary text, and
+locally copied source spans. The rules below describe the deterministic path;
+they do not describe the model selector's semantic judgments.
+
 ## 1. Recognize explicit categories
 
 `compile_handoff()` expects exact section names in `Message.kind` or tags.
