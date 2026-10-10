@@ -42,6 +42,7 @@ def prepare_source(task: dict[str, str], root: Path, proxy: str | None) -> None:
 
 
 def fork_source(source: Path, target: Path) -> None:
+    source, target = source.resolve(), target.resolve()
     git(source.parent, "clone", "--shared", "--quiet", str(source), str(target))
     git(target, "config", "core.autocrlf", "false")
 
@@ -145,3 +146,17 @@ def parse_action(text: str, *, writable: bool) -> dict[str, Any]:
     if value["operation"] not in schema["properties"]["operation"]["enum"]:
         raise ValueError("Invalid source action operation")
     return value
+
+
+def parse_actions(text: str, *, writable: bool) -> list[dict[str, Any]]:
+    """Accept explicit concatenated action objects; validate every object."""
+    remaining = text.strip()
+    actions = []
+    decoder = json.JSONDecoder()
+    while remaining:
+        _, end = decoder.raw_decode(remaining)
+        actions.append(parse_action(remaining[:end], writable=writable))
+        remaining = remaining[end:].lstrip()
+    if not actions:
+        raise ValueError("No source action returned")
+    return actions

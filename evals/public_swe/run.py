@@ -28,13 +28,15 @@ from .repository import (
     action_schema,
     fork_source,
     git,
-    parse_action,
+    parse_actions,
     prepare_source,
 )
 
 CONDITIONS = ("full_history", "receiver_aware_summary", "model_handoff")
 COUNTER = ApproxTokenCounter()
-TOOL_INSTRUCTIONS = """You work on a real source checkout. Return one JSON action.
+TOOL_INSTRUCTIONS = """You work on a real source checkout. Return JSON actions.
+You may return up to three concatenated JSON action objects, each with the
+same schema. Each executed action counts against your tool-step budget.
 Use list(path prefix), search(query literal text, optional path prefix),
 read(path, start and end inclusive, 1–241 lines), or finish with a useful note.
 Coder can also edit(path, old exact text matching once, new replacement).
@@ -69,6 +71,9 @@ class Recorder:
             response = await self.client.responses.create(**kwargs)
             row.update(status="completed", response=response.model_dump(mode="json"))
             return response
+        except asyncio.CancelledError:
+            row.update(status="interrupted", error_type="CancelledError")
+            raise
         except Exception as error:
             row.update(
                 status="error",
@@ -116,8 +121,9 @@ async def agent(
     history: list[dict[str, str]] = [{"role": "user", "content": prompt}]
     events: list[dict[str, str]] = []
     finished = False
-    for index in range(steps + (1 if researcher else 0)):
-        last_research = researcher and index == steps
+    used_steps = 0
+    for _ in range(steps + (1 if researcher else 0)):
+        last_research = researcher and used_steps >= steps
         instructions = TOOL_INSTRUCTIONS + (
             "\nResearch only; identify relevant code, caveats and work for the coder."
             if researcher
@@ -145,26 +151,34 @@ async def agent(
         )
         if response.status != "completed":
             raise ValueError("Incomplete agent response")
-        action = parse_action(response.output_text, writable=tools.writable)
+        actions = parse_actions(response.output_text, writable=tools.writable)
         events.append({"role": "assistant", "content": response.output_text})
         history.append({"role": "assistant", "content": response.output_text})
-        if action["operation"] == "finish":
-            finished = True
+        for action in actions:
+            if action["operation"] == "finish":
+                finished = True
+                break
+            if used_steps >= steps:
+                break
+            used_steps += 1
+            try:
+                observation = await asyncio.to_thread(tools.execute, action)
+            except (ValueError, OSError) as error:
+                observation = f"Source tool failed: {type(error).__name__}: {error}"
+            observation = (
+                f"Executed {action['operation']} {action['path']}:\n" + observation
+            )
+            events.append({"role": "tool", "content": observation})
+            history.append(
+                {"role": "user", "content": "Source tool observation:\n" + observation}
+            )
+        if finished or last_research or (not researcher and used_steps >= steps):
             break
-        if last_research:
-            break
-        try:
-            observation = await asyncio.to_thread(tools.execute, action)
-        except (ValueError, OSError) as error:
-            observation = f"Source tool failed: {type(error).__name__}: {error}"
-        events.append({"role": "tool", "content": observation})
-        history.append(
-            {"role": "user", "content": "Source tool observation:\n" + observation}
-        )
     return {
         "events": events,
         "finished": finished,
         "steps_exhausted": not finished,
+        "executed_tool_steps": used_steps,
         **recorder.usage(),
     }
 
@@ -180,6 +194,12 @@ async def run_task(
         folder = args.output / task_id
         report_path = folder / "report.json"
         if args.resume and report_path.exists():
+            old = json.loads(report_path.read_text(encoding="utf-8"))
+            if old.get("status") not in {"completed_candidates", "task_setup_failed"}:
+                raise ValueError(
+                    "Partial task cannot be silently rerun; "
+                    "preserve it and start a separate run"
+                )
             return cast(
                 dict[str, Any], json.loads(report_path.read_text(encoding="utf-8"))
             )
@@ -247,6 +267,8 @@ async def run_task(
                     "grading_status": "not_run",
                 }
                 try:
+                    target = args.work / task_id / condition
+                    await asyncio.to_thread(fork_source, source, target)
                     if condition == "full_history":
                         context = json.dumps(original, ensure_ascii=False)
                     elif condition == "receiver_aware_summary":
@@ -290,8 +312,6 @@ async def run_task(
                             compilation.model_dump(mode="json"),
                         )
                     preparation = calls.usage()
-                    target = args.work / task_id / condition
-                    await asyncio.to_thread(fork_source, source, target)
                     continuation = await agent(
                         calls,
                         args.model,
@@ -437,6 +457,8 @@ def main() -> None:
     parser.add_argument("--git-proxy")
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
+    args.output = args.output.resolve()
+    args.work = args.work.resolve()
     if (
         min(
             args.concurrency, args.research_steps, args.coder_steps, args.handoff_tokens

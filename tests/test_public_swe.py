@@ -7,7 +7,7 @@ import pytest
 
 from evals.public_swe import repository
 from evals.public_swe.dataset import download_snapshot, public_task, split_rows
-from evals.public_swe.repository import RepositoryTools, parse_action
+from evals.public_swe.repository import RepositoryTools, parse_action, parse_actions
 
 
 def rows() -> list[dict[str, Any]]:
@@ -136,3 +136,38 @@ def test_action_schema_does_not_accept_research_edits_or_wrong_types() -> None:
     action["start"] = True
     with pytest.raises(ValueError, match="type"):
         parse_action(json.dumps(action), writable=True)
+
+
+def test_batched_gateway_actions_are_all_validated() -> None:
+    import json
+
+    action = {
+        "operation": "read",
+        "path": "mod.py",
+        "query": "",
+        "old": "",
+        "new": "",
+        "note": "",
+        "start": 1,
+        "end": 10,
+    }
+    text = json.dumps(action)
+    assert parse_actions(text + text, writable=False) == [action, action]
+    with pytest.raises(ValueError):
+        parse_actions(text + '{"operation":"edit"}', writable=False)
+    with pytest.raises(ValueError):
+        parse_actions("```json\n" + text + "\n```", writable=False)
+
+
+def test_source_fork_uses_absolute_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[Any, ...]] = []
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(repository, "git", lambda *args: calls.append(args) or "")
+    repository.fork_source(Path("work/task/source"), Path("work/task/coder"))
+    assert calls[0][0] == (tmp_path / "work/task").resolve()
+    assert calls[0][-2:] == (
+        str(tmp_path / "work/task/source"),
+        str(tmp_path / "work/task/coder"),
+    )
