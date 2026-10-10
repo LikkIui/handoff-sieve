@@ -47,8 +47,8 @@ Both packets preserve the compatibility constraint, failed approach, and
 pending work. Unrelated hosting and launch notes disappear. The demo asserts
 that the two views differ and that the original sender state stays intact.
 Counts come from the actual synthetic fixture with the built-in token estimate.
-This verifies packet selection; downstream task success is measured separately
-in the checkpoint below.
+This demo checks that each receiver gets the intended context. Downstream task
+success is measured separately below.
 
 For a packet-only takeover with five objective behavior checks:
 
@@ -79,7 +79,35 @@ module and passes five behavior checks; the reviewer receives the inherited
 decisions plus new work and tool results, then independently checks the API and
 all eight input combinations. See the [relay example](examples/three_agent_relay/README.md).
 
-## Twenty-task real-provider checkpoint
+## Latest real-provider audit: 2026-10-04–05
+
+The latest run uses the released `0.3.0a3`, the corrected summary prompt, and
+compact packet rendering. These are 20 short executable tasks with prepared,
+classified sender states, one trial per condition, and the same public task
+instructions and host-side checks.
+
+| Condition | Success | Total estimated handoff tokens | Available reported provider tokens | Model calls |
+|---|---:|---:|---:|---:|
+| Full History | 17/20 | 15,025 | 34,541 | 20 |
+| Naive Summary | 16/20 | 9,792 | 63,032 | 40 |
+| HandoffSieve | 16/20 | 6,773 | 29,644 | 20 |
+
+Each condition had two model timeouts, retained as failures. Summary totals
+include both preparation and takeover calls. Available usage excludes unknown
+timeout usage and does not establish invoice savings. HandoffSieve sends 54.9%
+less estimated handoff context than Full History in this run, but this small
+sample does not establish unchanged or better downstream success.
+
+The audit also records a targeted selection stress test, one real coder →
+reviewer relay, and a separately labeled clarification of two incomplete task
+specifications. The clarification results do not replace the original scores.
+Across all audit diagnostics: **111 real requests, 104 returned usages,
+7 timeouts, and 156,341 available reported tokens**; no automatic retries.
+
+Read the [result records and limitations](evals/takeover/results/2026-10-04-gpt-5.6-sol-audit/README.md)
+and the [optimization review](docs/optimization-review-2026-10-04.md).
+
+## Historical checkpoint: 2026-10-01
 
 The v0.3 checkpoint covers 20 executable takeover tasks with one trial per
 task. All conditions used the same requested model, starter files, task prefix,
@@ -120,6 +148,10 @@ generic summary can also drop the one failed attempt or constraint that matters.
 HandoffSieve makes the receiver's needs explicit. Required sections must be
 present and fit the budget. Preferred sections are added in order while space
 remains. The output is a typed packet that another agent can consume directly.
+
+The default compiler uses explicit labels and local rules, not semantic
+inference from `goal`. See [how selection rules work](docs/selection-rules.md)
+for classification, budgeting, optional state preparation, and current limits.
 
 ## Install
 
