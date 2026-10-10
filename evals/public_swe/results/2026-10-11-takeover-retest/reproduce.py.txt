@@ -1,0 +1,84 @@
+import asyncio
+import getpass
+import json
+import shutil
+from pathlib import Path
+
+from openai import AsyncOpenAI
+
+from evals.public_swe.repository import RepositoryTools, fork_source, git
+from evals.public_swe.run import CONDITIONS, Recorder, agent, save
+from handoff_sieve import ApproxTokenCounter, ModelHandoffCompilation
+
+SOURCE = Path('evals/public_swe/results/2026-10-11-development-native')
+SELECTED = Path('evals/public_swe/results/2026-10-11-selection-retest')
+OUTPUT = Path('evals/public_swe/results/2026-10-11-takeover-retest')
+WORK = Path('work/public-swe-takeover-retest')
+TASKS = ['scikit-learn__scikit-learn-25931', 'pylint-dev__pylint-6528']
+
+
+async def main():
+    OUTPUT.mkdir(parents=True, exist_ok=False)
+    shutil.copyfile(__file__, OUTPUT / 'reproduce.py.txt')
+    save(OUTPUT / 'run-manifest.json', {
+        'kind': 'development corrective takeover retest',
+        'source_run': SOURCE.as_posix(),
+        'selection_run': SELECTED.as_posix(),
+        'task_ids': TASKS,
+        'new_distinct_tasks': 0,
+        'implementation_revision': git(Path.cwd(), 'rev-parse', 'HEAD').strip(),
+        'conditions': list(CONDITIONS),
+        'model': 'gpt-5.6-sol',
+        'coder_steps': 24,
+        'automatic_retries': 0,
+        'context_preparation': 'reuse frozen full/summary contexts and corrective selected packets; no new preparation calls',
+        'changes_from_initial': 'indexed selector packet, remaining-action notice, 8 to 24 coder actions',
+        'split': 'development',
+        'success_results': 'pending upstream grading',
+    })
+    tasks = {t['instance_id']: t for t in (json.loads(line) for line in Path('evals/public_swe/data/development.jsonl').read_text(encoding='utf-8').splitlines())}
+    key = getpass.getpass('API credential: ')
+    async with AsyncOpenAI(api_key=key, base_url='https://ckffai.com/v1', timeout=180, max_retries=0) as client:
+        key = None
+        semaphore = asyncio.Semaphore(3)
+
+        async def takeover(task_id, condition):
+            async with semaphore:
+                task = tasks[task_id]
+                source = Path('work/public-swe-development-native') / task_id / 'source'
+                if git(source, 'rev-parse', 'HEAD').strip() != task['base_commit'] or git(source, 'status', '--porcelain'):
+                    raise ValueError('Original checkout is not the frozen clean source')
+                target = WORK / task_id / condition
+                target.parent.mkdir(parents=True, exist_ok=True)
+                await asyncio.to_thread(fork_source, source, target)
+                folder = OUTPUT / task_id
+                folder.mkdir(exist_ok=True)
+                initial = json.loads((SOURCE / task_id / 'report.json').read_text(encoding='utf-8'))
+                if condition == 'model_handoff':
+                    compilation = ModelHandoffCompilation.model_validate_json((SELECTED / task_id / 'compilation.json').read_text(encoding='utf-8'))
+                    context = compilation.packet.to_receiver_text()
+                    origin = (SELECTED / task_id / 'compilation.json').as_posix()
+                else:
+                    context = next(row['context'] for row in initial['conditions'] if row['condition'] == condition)
+                    origin = (SOURCE / task_id / 'report.json').as_posix()
+                recorder = Recorder(client, folder / condition)
+                row = {'instance_id': task_id, 'condition': condition, 'context_source': origin, 'handoff_tokens': ApproxTokenCounter().count_text(context), 'acceptance': None, 'grading_status': 'not_run'}
+                try:
+                    continuation = await agent(recorder, 'gpt-5.6-sol', RepositoryTools(target, writable=True), 'Fix the issue using the current source checkout.\n' + task['problem_statement'] + '\n\n<handoff_context>\n' + context + '\n</handoff_context>', 24, researcher=False)
+                    patch = git(target, 'diff', '--no-ext-diff', 'HEAD', '--')
+                    (folder / (condition + '.patch')).write_text(patch, encoding='utf-8', newline='')
+                    save(folder / (condition + '-continuation.json'), continuation)
+                    row.update(status='candidate_generated' if patch else 'no_patch', executed_tool_steps=continuation['executed_tool_steps'], steps_exhausted=continuation['steps_exhausted'])
+                except Exception as error:
+                    row.update(status='failed_before_grading', error_type=type(error).__name__)
+                row.update(recorder.usage())
+                save(folder / (condition + '-report.json'), row)
+                print(json.dumps(row), flush=True)
+                return row
+
+        rows = await asyncio.gather(*(takeover(task_id, condition) for task_id in TASKS for condition in CONDITIONS))
+    save(OUTPUT / 'candidates.json', rows)
+    save(OUTPUT / 'predictions.json', {'task_ids': TASKS, 'conditions': list(CONDITIONS)})
+
+
+asyncio.run(main())
