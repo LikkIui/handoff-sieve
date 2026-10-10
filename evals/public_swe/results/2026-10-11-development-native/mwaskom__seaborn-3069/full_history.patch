@@ -1,0 +1,46 @@
+diff --git a/seaborn/_core/plot.py b/seaborn/_core/plot.py
+index 4f0290a..5237d04 100644
+--- a/seaborn/_core/plot.py
++++ b/seaborn/_core/plot.py
+@@ -1642,8 +1642,21 @@ class Plotter:
+                         lo = cast(float, lo) - 0.5
+                     if isinstance(b, str):
+                         hi = cast(float, hi) + 0.5
+-                    ax.set(**{f"{axis}lim": (lo, hi)})
++                nominal_size = getattr(axis_obj, "_seaborn_nominal", None)
++                if nominal_size is not None:
++                    # Nominal scales use one half-unit of padding on either
++                    # side of their first and last category, independent of
++                    # matplotlib's usual margins.
++                    if axis_key not in p._limits:
++                        lo, hi = -.5, nominal_size - .5
++                        ax.set(**{f"{axis}lim": (lo, hi)})
++
++                    # Match the behavior of seaborn's categorical plots.
++                    # This is intentionally applied after the theme, while
++                    # still allowing explicit limits above to take effect.
++                    ax.grid(False, axis=axis, which="both")
++                    if axis == "y" and not ax.yaxis_inverted():
++                        ax.invert_yaxis()
+ 
+-        engine_default = None if p._target is not None else "tight"
+         layout_engine = p._layout_spec.get("engine", engine_default)
+         set_layout_engine(self._figure, layout_engine)
+diff --git a/seaborn/_core/scales.py b/seaborn/_core/scales.py
+index bbd71ec..64cec3d 100644
+--- a/seaborn/_core/scales.py
++++ b/seaborn/_core/scales.py
+@@ -192,9 +192,11 @@ class Nominal(Scale):
+             # and (B) allow the values parameter for a Coordinate to set xlim/ylim
+             axis.set_view_interval(0, len(units_seed) - 1)
+ 
+-        new._matplotlib_scale = mpl_scale
++        # Keep track of the categorical extent for the final axis setup.  This
++        # is attached to the axis rather than the matplotlib scale because the
++        # latter is shared by axes in some subplot configurations.
++        axis._seaborn_nominal = len(units_seed)
+ 
+-        # TODO array cast necessary to handle float/int mixture, which we need
+         # to solve in a more systematic way probably
+         # (i.e. if we have [1, 2.5], do we want [1.0, 2.5]? Unclear)
+         axis.update_units(stringify(np.array(units_seed)))

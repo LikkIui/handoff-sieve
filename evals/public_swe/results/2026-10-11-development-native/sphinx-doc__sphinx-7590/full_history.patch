@@ -1,0 +1,115 @@
+diff --git a/sphinx/domains/cpp.py b/sphinx/domains/cpp.py
+index fe52d88..14d9bc3 100644
+--- a/sphinx/domains/cpp.py
++++ b/sphinx/domains/cpp.py
+@@ -823,14 +823,15 @@ class ASTBooleanLiteral(ASTLiteral):
+ 
+ 
+ class ASTNumberLiteral(ASTLiteral):
+-    def __init__(self, data: str) -> None:
++    def __init__(self, data: str, suffix: str = '') -> None:
+         self.data = data
++        self.suffix = suffix
+ 
+     def _stringify(self, transform: StringifyTransform) -> str:
+-        return self.data
++        return self.data + self.suffix
+ 
+     def get_id(self, version: int) -> str:
+-        return "L%sE" % self.data
++        return "L%sE" % (self.data + self.suffix)
+ 
+     def describe_signature(self, signode: TextElement, mode: str,
+                            env: "BuildEnvironment", symbol: "Symbol") -> None:
+@@ -839,15 +840,16 @@ class ASTNumberLiteral(ASTLiteral):
+ 
+ 
+ class ASTStringLiteral(ASTLiteral):
+-    def __init__(self, data: str) -> None:
++    def __init__(self, data: str, suffix: str = '') -> None:
+         self.data = data
++        self.suffix = suffix
+ 
+     def _stringify(self, transform: StringifyTransform) -> str:
+-        return self.data
++        return self.data + self.suffix
+ 
+     def get_id(self, version: int) -> str:
+         # note: the length is not really correct with escaping
+-        return "LA%d_KcE" % (len(self.data) - 2)
++        return "LA%d_KcE" % (len(self.data) - 2) + self.suffix
+ 
+     def describe_signature(self, signode: TextElement, mode: str,
+                            env: "BuildEnvironment", symbol: "Symbol") -> None:
+@@ -856,9 +858,10 @@ class ASTStringLiteral(ASTLiteral):
+ 
+ 
+ class ASTCharLiteral(ASTLiteral):
+-    def __init__(self, prefix: str, data: str) -> None:
++    def __init__(self, prefix: str, data: str, suffix: str = '') -> None:
+         self.prefix = prefix  # may be None when no prefix
+         self.data = data
++        self.suffix = suffix
+         assert prefix in _id_char_from_prefix
+         self.type = _id_char_from_prefix[prefix]
+         decoded = data.encode().decode('unicode-escape')
+@@ -869,12 +872,12 @@ class ASTCharLiteral(ASTLiteral):
+ 
+     def _stringify(self, transform: StringifyTransform) -> str:
+         if self.prefix is None:
+-            return "'" + self.data + "'"
++            return "'" + self.data + "'" + self.suffix
+         else:
+-            return self.prefix + "'" + self.data + "'"
++            return self.prefix + "'" + self.data + "'" + self.suffix
+ 
+     def get_id(self, version: int) -> str:
+-        return self.type + str(self.value)
++        return self.type + str(self.value) + self.suffix
+ 
+     def describe_signature(self, signode: TextElement, mode: str,
+                            env: "BuildEnvironment", symbol: "Symbol") -> None:
+@@ -4643,6 +4646,12 @@ class DefinitionParser(BaseParser):
+             self.pos += 1
+         return self.definition[startPos:self.pos]
+ 
++    def _parse_user_defined_suffix(self) -> str:
++        """Parse the identifier attached to a user-defined literal, if any."""
++        if self.match(identifier_re):
++            return self.matched_text
++        return ''
++
+     def _parse_literal(self) -> ASTLiteral:
+         # -> integer-literal
+         #  | character-literal
+@@ -4664,25 +4673,26 @@ class DefinitionParser(BaseParser):
+             if self.match(regex):
+                 while self.current_char in 'uUlLfF':
+                     self.pos += 1
+-                return ASTNumberLiteral(self.definition[pos:self.pos])
++                suffix = self._parse_user_defined_suffix()
++                return ASTNumberLiteral(self.definition[pos:self.pos - len(suffix)], suffix)
+ 
+         string = self._parse_string()
+         if string is not None:
+-            return ASTStringLiteral(string)
++            return ASTStringLiteral(string, self._parse_user_defined_suffix())
+ 
+         # character-literal
+         if self.match(char_literal_re):
+             prefix = self.last_match.group(1)  # may be None when no prefix
+             data = self.last_match.group(2)
++            suffix = self._parse_user_defined_suffix()
+             try:
+-                return ASTCharLiteral(prefix, data)
++                return ASTCharLiteral(prefix, data, suffix)
+             except UnicodeDecodeError as e:
+                 self.fail("Can not handle character literal. Internal error was: %s" % e)
+             except UnsupportedMultiCharacterCharLiteral:
+                 self.fail("Can not handle character literal"
+                           " resulting in multiple decoded characters.")
+ 
+-        # TODO: user-defined lit
+         return None
+ 
+     def _parse_fold_or_paren_expression(self) -> ASTExpression:
