@@ -171,3 +171,50 @@ def test_source_fork_uses_absolute_paths(
         str(tmp_path / "work/task/source"),
         str(tmp_path / "work/task/coder"),
     )
+
+
+def test_native_agent_returns_real_tool_error_before_next_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+    import json
+    from types import SimpleNamespace
+
+    from evals.public_swe.run import agent
+
+    tool = tools(tmp_path, monkeypatch, writable=True)
+    actions = [
+        {"operation": "edit", "path": "mod.py", "old": "absent", "new": "2"},
+        {"operation": "finish", "path": "", "old": "", "new": ""},
+    ]
+    requests = []
+
+    class FakeRecorder:
+        async def create(self, **kwargs: Any) -> Any:
+            import copy
+
+            requests.append(copy.deepcopy(kwargs))
+            values = actions[len(requests) - 1]
+            args = {"query": "", "note": "", "start": 0, "end": 0, **values}
+            dump = {
+                "type": "function_call",
+                "call_id": f"call-{len(requests)}",
+                "name": "source_operation",
+                "arguments": json.dumps(args),
+            }
+            item = SimpleNamespace(**dump, model_dump=lambda **_: dump)
+            return SimpleNamespace(status="completed", output=[item])
+
+        def usage(self) -> dict[str, Any]:
+            return {"model_calls": len(requests)}
+
+    result = asyncio.run(
+        agent(FakeRecorder(), "unit-fixture", tool, "fix", 2, researcher=False)
+    )  # type: ignore[arg-type]
+    assert requests[0]["parallel_tool_calls"] is False
+    output = requests[1]["input"][-1]
+    assert output["type"] == "function_call_output"
+    assert output["call_id"] == "call-1"
+    assert "Old text must match exactly once" in output["output"]
+    assert (tmp_path / "mod.py").read_text() == "value = 1\n"
+    assert result["executed_tool_steps"] == 1

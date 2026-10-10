@@ -28,15 +28,17 @@ from .repository import (
     action_schema,
     fork_source,
     git,
-    parse_actions,
+    parse_action,
     prepare_source,
 )
 
 CONDITIONS = ("full_history", "receiver_aware_summary", "model_handoff")
 COUNTER = ApproxTokenCounter()
-TOOL_INSTRUCTIONS = """You work on a real source checkout. Return JSON actions.
-You may return up to three concatenated JSON action objects, each with the
-same schema. Each executed action counts against your tool-step budget.
+TOOL_INSTRUCTIONS = """You work on a real source checkout. Call source_operation
+once, wait for its real output, then decide the next action. Never invent tool
+results or bundle future actions into text. Every executed operation consumes
+one source-tool step. If an edit fails, inspect the returned error and correct
+it before claiming completion. Read line numbers are labels, not source text.
 Use list(path prefix), search(query literal text, optional path prefix),
 read(path, start and end inclusive, 1–241 lines), or finish with a useful note.
 Coder can also edit(path, old exact text matching once, new replacement).
@@ -118,61 +120,80 @@ async def agent(
     *,
     researcher: bool,
 ) -> dict[str, Any]:
-    history: list[dict[str, str]] = [{"role": "user", "content": prompt}]
+    history: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
     events: list[dict[str, str]] = []
     finished = False
     used_steps = 0
-    for _ in range(steps + (1 if researcher else 0)):
-        last_research = researcher and used_steps >= steps
+    for _ in range(steps + 1):
+        budget_exhausted = used_steps >= steps
         instructions = TOOL_INSTRUCTIONS + (
             "\nResearch only; identify relevant code, caveats and work for the coder."
             if researcher
             else "\nImplement the issue in the current checkout."
         )
-        if last_research:
+        if budget_exhausted:
             instructions += (
-                "\nResearch budget exhausted. Use finish now, "
-                "with findings and unresolved work."
+                "\nTool budget exhausted. Use finish now. State what is actually "
+                "done and what remains unresolved; do not invent success."
             )
+        schema = action_schema(writable=tools.writable)
+        if budget_exhausted:
+            schema["properties"]["operation"]["enum"] = ["finish"]
         response = await recorder.create(
             model=model,
             store=False,
             input=history,
             instructions=instructions,
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "source_action",
+            tools=[
+                {
+                    "type": "function",
+                    "name": "source_operation",
+                    "description": "One bounded real source operation or finish note.",
                     "strict": True,
-                    "schema": action_schema(writable=tools.writable),
+                    "parameters": schema,
                 }
-            },
+            ],
+            tool_choice={"type": "function", "name": "source_operation"},
+            parallel_tool_calls=False,
+            include=["reasoning.encrypted_content"],
             max_output_tokens=6000,
         )
         if response.status != "completed":
             raise ValueError("Incomplete agent response")
-        actions = parse_actions(response.output_text, writable=tools.writable)
-        events.append({"role": "assistant", "content": response.output_text})
-        history.append({"role": "assistant", "content": response.output_text})
-        for action in actions:
-            if action["operation"] == "finish":
-                finished = True
-                break
-            if used_steps >= steps:
-                break
+        calls = [item for item in response.output if item.type == "function_call"]
+        if len(calls) != 1 or calls[0].name != "source_operation":
+            raise ValueError("Provider did not return one sequential source tool call")
+        call = calls[0]
+        action = parse_action(call.arguments, writable=tools.writable)
+        history.extend(
+            item.model_dump(mode="json", exclude_none=True) for item in response.output
+        )
+        events.append({"role": "assistant", "content": call.arguments})
+        if action["operation"] == "finish":
+            finished = True
+            observation = (
+                "Finish acknowledged; independent upstream grading is pending."
+            )
+        elif budget_exhausted:
+            raise ValueError("Provider attempted an operation beyond the tool budget")
+        else:
             used_steps += 1
             try:
                 observation = await asyncio.to_thread(tools.execute, action)
             except (ValueError, OSError) as error:
                 observation = f"Source tool failed: {type(error).__name__}: {error}"
-            observation = (
-                f"Executed {action['operation']} {action['path']}:\n" + observation
-            )
-            events.append({"role": "tool", "content": observation})
-            history.append(
-                {"role": "user", "content": "Source tool observation:\n" + observation}
-            )
-        if finished or last_research or (not researcher and used_steps >= steps):
+        observation = (
+            f"Executed {action['operation']} {action['path']}:\n" + observation
+        )
+        events.append({"role": "tool", "content": observation})
+        history.append(
+            {
+                "type": "function_call_output",
+                "call_id": call.call_id,
+                "output": observation,
+            }
+        )
+        if finished:
             break
     return {
         "events": events,
@@ -212,7 +233,23 @@ async def run_task(
         }
         source = args.work / task_id / "source"
         try:
-            await asyncio.to_thread(prepare_source, task, source, args.git_proxy)
+            cached = (
+                args.source_cache / task_id / "source" if args.source_cache else None
+            )
+            reusable = False
+            if cached is not None and (cached / ".git").exists():
+                try:
+                    reusable = git(cached, "rev-parse", "HEAD").strip() == task[
+                        "base_commit"
+                    ] and not git(cached, "status", "--porcelain")
+                except Exception:
+                    reusable = False
+            if reusable:
+                assert cached is not None
+                source.parent.mkdir(parents=True, exist_ok=True)
+                await asyncio.to_thread(fork_source, cached, source)
+            else:
+                await asyncio.to_thread(prepare_source, task, source, args.git_proxy)
             research_calls = Recorder(client, folder / "research")
             research = await agent(
                 research_calls,
@@ -397,6 +434,7 @@ async def run(args: argparse.Namespace) -> None:
         "receiver_tools": "list/search/read/edit; no local test execution",
         "token_counter": "built-in estimate",
         "automatic_retries": 0,
+        "agent_protocol": "sequential native Responses function calls",
         "split": "development",
         "success_results": "pending upstream grading",
     }
@@ -455,6 +493,7 @@ def main() -> None:
     parser.add_argument("--coder-steps", type=int, default=8)
     parser.add_argument("--handoff-tokens", type=int, default=4000)
     parser.add_argument("--git-proxy")
+    parser.add_argument("--source-cache", type=Path)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     args.output = args.output.resolve()

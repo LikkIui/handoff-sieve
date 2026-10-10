@@ -49,9 +49,18 @@ handoff budget. Each coder has at most eight source tool actions.
 Portable tools provide listing, literal search, bounded reads and exact source
 edits. They do not execute local tests or shell commands. This initial harness
 therefore tests a limited source-editing agent, not a full SWE-agent system.
-JSON action batches are explicitly supported; every object is validated and
-every executed action consumes the common tool budget. Bad actions and tool
-errors remain in the history. Candidate generation is **not** task success.
+Agents use sequential native Responses function calls and return actual tool
+outputs before requesting the next operation. Every executed action consumes
+the common tool budget. Bad actions and tool errors remain in the history.
+Candidate generation is **not** task success. This follows the
+[official function-calling flow](https://developers.openai.com/api/docs/guides/function-calling).
+
+The first two integration runs used JSON action text. Their raw attempts are
+retained, including failures and interruptions. They are development
+diagnostics and must not be pooled with the sequential-tool run as independent
+trials of one frozen implementation. `--source-cache` may reuse a clean source
+checkout only after its initial commit is verified; model histories and
+candidate edits are never reused by this option.
 
 Requests, parsed Responses, original history, contract, selection plan,
 continuation and generated patch are saved. Shared research cost, preparation
