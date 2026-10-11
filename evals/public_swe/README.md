@@ -87,10 +87,12 @@ claim. It then checks each available generated patch with upstream
 FAIL_TO_PASS and PASS_TO_PASS tests. Empty or unavailable patches remain
 failures; upstream execution errors remain explicit, not successful results.
 
-`control-request.json` selects the ten fixed development tasks and optionally
-points to a committed candidate directory. The workflow retains per-task
-reports and upstream execution logs as downloadable artifacts. No reference
-fix or grading output is fed back into a model run.
+`control-request.json` defaults to the initial ten tasks or selects a committed
+manifest of at most thirty development tasks, with an optional candidate
+directory. The workflow refuses held-out tasks and retains reports and logs as
+artifacts. Reference fixes, evaluator test patches and hidden acceptance
+feedback never enter model input. A receiver's own existing repository tests
+may provide separate visible feedback, described below.
 
 The 200-task, three-trial formal comparison is **planned, not completed**.
 Development failures may guide changes; held-out tasks must remain unused until
@@ -98,6 +100,12 @@ the implementation and experiment settings are frozen.
 
 ## Completed development evidence
 
+- [Remaining twenty fixed development attempts](results/2026-10-11-development-remaining20/README.md):
+  full history 7/20, strong summary 8/20, HandoffSieve 5/20; all controls valid.
+  Half the tasks had a recorded service interruption in research or a condition.
+  A secondary post-hoc service-error-free paired subset gives 5/10, 6/10 and
+  5/10; budget and code failures remain. The primary twenty-task denominator
+  stays unchanged. Unequal outages and one trial do not establish superiority.
 - [Initial ten-task sequential run](results/2026-10-11-development-native/README.md):
   full history 2/10, strong summary 1/10, selected packet 0/10; all controls valid.
 - [Indexed-selector retest](results/2026-10-11-selection-retest/README.md):
@@ -108,6 +116,12 @@ the implementation and experiment settings are frozen.
 The opt-in selector now preserves contiguous observed code windows and their
 original read context. [The same-state selector retest](results/2026-10-11-context-selection/README.md)
 reduced provider input tokens 33.97%; this is preparation cost, not task success.
+The later [budget-aware selector retest](results/2026-10-11-budget-selection-v1/README.md)
+produced eleven valid packets on already-used states; it adds no distinct task.
+Budget hints increase same-ten-state input 17.62%. A
+[separate xarray receiver retake](results/2026-10-11-budget-takeover-v2/README.md)
+passes official acceptance with 3,830 estimated tokens under the same 4,000
+budget, reusing baseline patches. This does not replace the original failure.
 
 The independent [`public-swe-visible-feedback`](../../.github/workflows/public-swe-visible.yml)
 workflow tests original repository code without loading grading answers. Its
@@ -118,6 +132,14 @@ Only a condition's own visible feedback enters its receiver continuation;
 hidden acceptance reports remain separate. This is one development batch
 feedback step, not a general interactive test tool for the source-only agent.
 
-Next, complete the 30-task development comparison with matching tools, budgets
-and receiver boundaries. No new adapters are planned before task quality is
-demonstrated, and the held-out 200 tasks remain unused.
+The [completed feedback diagnostic](results/2026-10-11-context-repair-v2/README.md)
+has all three conditions accepted on two previously-used tasks. Only Pylint
+received new continuation calls; the sklearn patches were reused. Before that
+correction, the coherent-source retake was 1/2, 1/2 and 2/2. This is not a new
+benchmark cohort or evidence of general superiority.
+
+Thirty distinct development tasks have now been attempted, with differing
+pilot configurations, so their success rates are not pooled. Next, inspect the
+four service-error-free Django failures shared by all conditions and provide
+matching receiver-owned original-test feedback. No new adapters are planned
+before task quality is demonstrated. The held-out 200 tasks remain unused.

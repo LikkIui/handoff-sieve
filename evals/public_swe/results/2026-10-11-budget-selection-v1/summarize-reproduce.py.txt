@@ -1,0 +1,100 @@
+import hashlib
+import json
+import shutil
+from pathlib import Path
+
+from handoff_sieve import ApproxTokenCounter, HandoffEnvelope, ModelHandoffCompilation, ReceiverContract
+from handoff_sieve.model_selection import SOURCE_ID_KEY, SOURCE_IDS_KEY, source_units
+from handoff_sieve.pipeline import HandoffPipeline
+
+root=Path('evals/public_swe/results/2026-10-11-budget-selection-v1')
+manifest=json.loads((root/'run-manifest.json').read_text(encoding='utf-8'))
+rows=[]
+spans=0
+counter=ApproxTokenCounter()
+for task in manifest['task_ids']:
+    folder=root/task
+    row=json.loads((folder/'report.json').read_text(encoding='utf-8'))
+    origin=Path(row['source'])
+    for name in ('sender','contract'):
+        raw=(folder/(name+'.json')).read_bytes()
+        assert raw==(origin/(name+'.json')).read_bytes()
+        assert hashlib.sha256(raw).hexdigest()==row[name+'_sha256']
+    state=HandoffEnvelope.model_validate_json((folder/'sender.json').read_text(encoding='utf-8'))
+    contract=ReceiverContract.model_validate_json((folder/'contract.json').read_text(encoding='utf-8'))
+    compilation=ModelHandoffCompilation.model_validate_json((folder/'compilation.json').read_text(encoding='utf-8'))
+    assert compilation.packet.goal==contract.goal
+    assert counter.count_text(compilation.packet.to_receiver_text())==row['packet_tokens']<=contract.max_tokens
+    assert row['model_calls']==row['completed_model_calls']==row['usage_reported_calls']==1
+    units={u.source_id:u for u in source_units(state,HandoffPipeline())}
+    for item in [*compilation.packet.to_envelope().messages,*compilation.packet.artifacts]:
+        ids=item.metadata.get(SOURCE_IDS_KEY) or [item.metadata[SOURCE_ID_KEY]]
+        selected=[units[i] for i in ids]
+        assert len({(u.source_type,u.source_index) for u in selected})==1
+        if isinstance(item.content,str) and selected[0].start is not None:
+            assert all(u.start is not None and u.end is not None for u in selected)
+            starts=[u.start for u in selected]
+            assert starts==sorted(starts)
+            original=state.messages[selected[0].source_index].content
+            assert isinstance(original,str)
+            for a,b in zip(selected,selected[1:]):
+                assert not original[a.end:b.start].strip()
+            assert item.content==original[selected[0].start:selected[-1].end]
+        else:
+            assert len(selected)==1 and item.content==selected[0].content
+        spans+=1
+    call=json.loads((folder/'selector/call-001.json').read_text(encoding='utf-8'))
+    assert call['status']=='completed'
+    usage=call['response']['usage']
+    request=json.loads(call['request']['input'])
+    rows.append({'instance_id':task,'packet_tokens':row['packet_tokens'],'provider_input_tokens':usage['input_tokens'],'provider_output_tokens':usage['output_tokens'],'provider_total_tokens':usage['total_tokens'],'fixed_packet_tokens':request['fixed_packet_tokens'],'source_budget_tokens':request['source_budget_tokens']})
+old=Path('evals/public_swe/results/2026-10-11-context-selection')
+old_input=sum(json.loads(p.read_text(encoding='utf-8'))['response']['usage']['input_tokens'] for p in old.glob('*/selector/call-001.json'))
+new_input=sum(r['provider_input_tokens'] for r in rows if r['instance_id']!='pydata__xarray-6721')
+summary={'kind':'budget-aware selection mechanism validation','new_distinct_tasks':0,'downstream_task_success_measured':False,'tasks':rows,'valid_packets':len(rows),'model_calls':len(rows),'reported_provider_tokens':sum(r['provider_total_tokens'] for r in rows),'exact_original_packet_spans_verified':spans,'sources_and_contracts_unchanged':True,'same_ten_state_input_cost':{'previous_context_selector':old_input,'budget_aware_selector':new_input,'change_percent':round(100*(new_input-old_input)/old_input,2)},'limitations':['Selection validity is not semantic sufficiency or downstream success.','Pytest uses the same observations; a different plan does not establish that missing evidence was supplied.','Provider reported usage is not billing or a verified underlying model identity.']}
+(root/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+for name,target in [('model-budget-preparation-benchmark.json','local-preparation-benchmark.json'),('profile_model_budget_preparation.py','local-preparation-reproduce.py.txt')]:
+    shutil.copyfile(Path('work')/name,root/target)
+table='\n'.join(f"| {r['instance_id']} | {r['packet_tokens']:,} | {r['fixed_packet_tokens']:,} | {r['source_budget_tokens']:,} |" for r in rows)
+text=f'''# Budget-aware original-state selection
+
+Eleven already-used development sender states, eleven selector requests, eleven
+valid packets within the unchanged 4,000-token contracts. This is a mechanism
+validation, not eleven new tasks or a downstream success comparison.
+
+The new selector sees the canonical packet's fixed cost, the remaining material
+budget and conservative insertion estimates. No goal is shortened, essential
+state is not silently dropped, and compilation still checks the complete packet.
+All {spans} retained packet spans were independently checked against exact
+original sender content; sender and contract bytes remain unchanged.
+
+| Task | Packet estimate | Fixed packet cost | Available source budget |
+|---|---:|---:|---:|
+{table}
+
+The long xarray goal previously produced a 4,266-token essential packet that was
+rejected. This independent selection produces 3,830 tokens within the same
+4,000-token budget. A separate receiver run measures whether it can solve the
+task; validity here is not task success. Pytest uses the same limited observations
+as before: the model returned a different valid plan, not additional evidence.
+
+All eleven responses completed and reported usage: {summary['reported_provider_tokens']:,}
+total tokens. On the same original ten states, provider input changes from
+{old_input:,} to {new_input:,} ({summary['same_ten_state_input_cost']['change_percent']:+.2f}%).
+Budget hints cost input tokens; the earlier 33.97% reduction measured a different
+change and is not the effect of these hints. Usage is not a bill, and the gateway's
+requested model alias does not verify its underlying identity.
+
+`local-preparation-benchmark.json` records a local timing observation: 280 units
+4.645 to 6.309 ms; a synthetic 2,240-unit input 36.686 to 49.048 ms. It includes
+catalog creation, copies, planning estimates, serialization and schema; excludes
+API, final compilation and receiver execution. The baseline reconstructs the old
+request flow in current code. Hardware was not recorded and timings were not
+interleaved; this does not establish p95 or general linear dependency-graph time.
+The script and the xarray input are committed for inspection and local replay.
+
+`reproduce.py.txt`, raw requests/responses, input hashes, the implementation
+revision and run status are retained. No automatic retries or held-out tasks.
+'''
+(root/'README.md').write_text(text,encoding='utf-8')
+print(json.dumps({k:v for k,v in summary.items() if k not in ('tasks','limitations')}))

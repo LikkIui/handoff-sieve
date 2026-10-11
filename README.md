@@ -30,6 +30,11 @@ copying the selected **original source spans**; the selector does not rewrite
 task facts or code. Essential content stays pinned while optional context fits
 the rendered packet budget.
 
+Observed source reads retain contiguous code and enclosing context already in
+the sender state. The selector sees the packet's fixed cost and remaining
+material budget before choosing; the complete packet is still checked locally.
+These checks protect source fidelity and size, not semantic sufficiency.
+
 ```python
 result = await compile_model_handoff(
     sender_state,
@@ -71,14 +76,30 @@ The pilot review initially failed local selection validation; its separately
 recorded follow-up passed. These are small synthetic diagnostics, not a general
 success-rate claim.
 
-The [public-task development run](evals/public_swe/results/2026-10-11-development-native/README.md)
-now uses ten original SWE-bench Verified issues and upstream tests. With a
-limited eight-action source-only coder, full history resolved 2/10, the strong
-summary 1/10, and HandoffSieve 0/10. A separate two-task 24-action corrective
-retest resolved 2/2, 1/2 and 1/2 respectively. All grading controls passed;
-these results do not establish sufficiency or superiority. The next work is
-source dependencies and reliable takeover execution. The frozen 200-task
-held-out comparison remains unrun; see the [data plan](docs/dataset-plan.md).
+Public-task development now covers **30 distinct attempted SWE-bench Verified
+issues**. Configurations differ, so this is not a pooled thirty-task success
+rate. The [latest fixed twenty-task cohort](evals/public_swe/results/2026-10-11-development-remaining20/README.md)
+used eight research and up to twenty-four coder source operations:
+
+| Condition | Official acceptance / all 20 attempts |
+|---|---:|
+| Full History | 7/20 |
+| Receiver-aware Summary | 8/20 |
+| HandoffSieve | 5/20 |
+
+All official controls were valid. Service failures affected half the tasks,
+unequally across conditions. A secondary post-hoc subset with no recorded
+service error in any condition gives 5/10, 6/10 and 5/10 respectively, retaining
+code and budget failures. The primary denominator stays twenty. These results
+**do not demonstrate superiority over the strong summary**.
+
+A [separate corrective xarray case](evals/public_swe/results/2026-10-11-budget-takeover-v2/README.md)
+now passes official acceptance with a 3,830-token packet under the same 4,000
+limit; the original budget failure remains in the cohort. The
+[initial ten-task failure](evals/public_swe/results/2026-10-11-development-native/README.md)
+and all retakes remain public. Next: improve takeover quality with the receiver's
+own original-test feedback before freezing the formal configuration. The 200
+held-out tasks remain unused; see the [data plan](docs/dataset-plan.md).
 
 ## Try it offline
 

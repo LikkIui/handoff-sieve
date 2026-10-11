@@ -26,8 +26,8 @@ original sender content; sender and contract bytes remain unchanged.
 
 The long xarray goal previously produced a 4,266-token essential packet that was
 rejected. This independent selection produces 3,830 tokens within the same
-4,000-token budget. A separate receiver run measures whether it can solve the
-task; validity here is not task success. Pytest uses the same limited observations
+4,000-token budget. A [separate receiver run](../2026-10-11-budget-takeover-v2/README.md) passed
+official acceptance; packet validity here alone is not task success. Pytest uses the same limited observations
 as before: the model returned a different valid plan, not additional evidence.
 
 All eleven responses completed and reported usage: 138,244

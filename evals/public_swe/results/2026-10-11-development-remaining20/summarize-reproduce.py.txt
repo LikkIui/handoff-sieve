@@ -1,0 +1,787 @@
+"""Summarize only the completed, provenance-verified remaining development cohort.
+
+This utility makes no network requests. It refuses partial/live cohorts and
+writes only README.md and summary.json after validating all input evidence.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+from collections import Counter
+from pathlib import Path
+from typing import Any
+
+from handoff_sieve import ApproxTokenCounter
+
+ROOT = Path.cwd()
+DEFAULT = ROOT / "evals/public_swe/results/2026-10-11-development-remaining20"
+REVISION = "9659fb29fb81bd4e5f4b76decdb42dd01174db65"
+CONDITIONS = ("full_history", "receiver_aware_summary", "model_handoff")
+TERMINAL = {"completed_candidates", "task_setup_failed"}
+ROW_TERMINAL = {"candidate_generated", "no_patch", "failed_before_grading"}
+COUNTER = ApproxTokenCounter()
+
+
+def read(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"Expected a JSON object: {path}")
+    return value
+
+
+def sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def patch_bytes(directory: Path, task: str, condition: str) -> bytes:
+    path = directory / task / f"{condition}.patch"
+    return path.read_bytes() if path.exists() else b""
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
+
+
+def rooted(path: str) -> Path:
+    value = Path(path)
+    return (value if value.is_absolute() else ROOT / value).resolve()
+
+
+def usage(records: list[tuple[Path, dict[str, Any]]], cohort: Path) -> dict[str, Any]:
+    known = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    unknown = []
+    for path, row in records:
+        reported = (row.get("response") or {}).get("usage") or {}
+        for field in known:
+            value = reported.get(field)
+            if type(value) is int and value >= 0:
+                known[field] += value
+        if type(reported.get("total_tokens")) is not int:
+            unknown.append(
+                {
+                    "record": path.relative_to(cohort).as_posix(),
+                    "status": row.get("status"),
+                    "error_type": row.get("error_type"),
+                    "status_code": row.get("status_code"),
+                }
+            )
+    return {
+        "requests": len(records),
+        "completed_request_records": sum(
+            r.get("status") == "completed" for _, r in records
+        ),
+        "status_counts": dict(Counter(r.get("status", "unknown") for _, r in records)),
+        "http_error_status_counts": dict(
+            Counter(
+                str(r["status_code"])
+                for _, r in records
+                if r.get("status_code") is not None
+            )
+        ),
+        "provider_response_status_counts": dict(
+            Counter(
+                r["response"].get("status", "unknown")
+                for _, r in records
+                if r.get("response")
+            )
+        ),
+        "known_reported_usage": known,
+        "usage_reporting_complete": not unknown,
+        "requests_without_reported_total_usage": len(unknown),
+        "unknown_usage_requests": unknown,
+        "request_seconds": round(sum(r.get("seconds", 0) for _, r in records), 3),
+    }
+
+
+def phase_records(folder: Path) -> list[tuple[Path, dict[str, Any]]]:
+    paths = sorted(folder.glob("call-*.json"))
+    require(
+        [p.name for p in paths]
+        == [f"call-{i:03d}.json" for i in range(1, len(paths) + 1)],
+        f"Missing or out-of-order request record in {folder}",
+    )
+    rows = [(path, read(path)) for path in paths]
+    require(
+        all(
+            row.get("status") in {"completed", "error", "interrupted"}
+            for _, row in rows
+        ),
+        f"Unfinished or unknown request record in {folder}",
+    )
+    return rows
+
+
+def output_text(record: dict[str, Any]) -> str:
+    return "".join(
+        part.get("text", "")
+        for item in (record.get("response") or {}).get("output", [])
+        if item.get("type") == "message"
+        for part in item.get("content", [])
+        if part.get("type") == "output_text"
+    )
+
+
+def actual_context(
+    row: dict[str, Any], continuation: list[tuple[Path, dict[str, Any]]]
+) -> str | None:
+    context = row.get("context")
+    sent = None
+    if continuation:
+        history = continuation[0][1]["request"].get("input")
+        require(isinstance(history, list), "Native continuation input is not a history")
+        matches = []
+        for item in history:
+            content = item.get("content") if item.get("role") == "user" else None
+            if isinstance(content, str) and "<handoff_context>\n" in content:
+                matches.append(
+                    content.split("<handoff_context>\n", 1)[1].rsplit(
+                        "\n</handoff_context>", 1
+                    )[0]
+                )
+        require(
+            len(matches) == 1, "Expected exactly one actual initial handoff context"
+        )
+        sent = matches[0]
+    if context is not None:
+        require(isinstance(context, str), "Saved context must be text")
+        require(
+            sent == context, "Saved handoff differs from the actual receiver request"
+        )
+    return context if context is not None else sent
+
+
+def error_category(records: list[tuple[Path, dict[str, Any]]]) -> str | None:
+    if any(r.get("status_code") == 503 for _, r in records):
+        return "provider_503"
+    if any(r.get("status") == "interrupted" for _, r in records):
+        return "interrupted"
+    if any(r.get("status") == "error" for _, r in records):
+        return "provider_or_transport_error"
+    return None
+
+
+def summary_budget_rejected(
+    preparation: list[tuple[Path, dict[str, Any]]], max_tokens: int
+) -> bool:
+    if not preparation:
+        return False
+    record = preparation[0][1]
+    if (record.get("response") or {}).get("status") != "completed":
+        return False
+    text = output_text(record)
+    request = json.loads(record["request"]["input"])
+    goal = request["contract"]["goal"]
+    wrapped = json.dumps(
+        {"goal": goal, "summary": text}, ensure_ascii=False, separators=(",", ":")
+    )
+    return (
+        COUNTER.count_text(text) > max_tokens
+        or COUNTER.count_text(wrapped) > max_tokens
+    )
+
+
+def classify(
+    task_report: dict[str, Any],
+    row: dict[str, Any] | None,
+    research: list[tuple[Path, dict[str, Any]]],
+    records: list[tuple[Path, dict[str, Any]]],
+    preparation: list[tuple[Path, dict[str, Any]]],
+    condition: str,
+    grading: dict[str, Any],
+    controls_valid: bool,
+    max_tokens: int,
+) -> str:
+    if not controls_valid:
+        return "invalid_grading_controls"
+    if (
+        grading.get("infra_failure")
+        or grading.get("status") == "upstream_evaluation_error"
+        or grading.get("resolved") is None
+    ):
+        return "grading_infrastructure_error"
+    if grading.get("resolved") is True:
+        require(
+            row is not None and row.get("status") == "candidate_generated",
+            "Graded success has no completed candidate record",
+        )
+        return "success"
+    if task_report["status"] == "task_setup_failed":
+        failure = error_category(research)
+        return "shared_" + failure if failure else "shared_setup_failure"
+    require(row is not None, "Completed task lacks a condition")
+    failure = error_category(records)
+    if failure:
+        return failure
+    if row["status"] == "failed_before_grading":
+        if row.get("error_type") == "BudgetExceededError":
+            return "budget_rejection"
+        if (
+            condition == "receiver_aware_summary"
+            and row.get("error_type") == "ValueError"
+            and summary_budget_rejected(preparation, max_tokens)
+        ):
+            return "budget_rejection"
+        if "cannot satisfy need" in row.get("error_message", ""):
+            return "missing_evidence_rejection"
+        if row.get("error_type") == "ContractError":
+            return "selection_contract_rejection"
+        return "model_or_protocol_failure"
+    if row["status"] == "no_patch":
+        return "no_patch"
+    require(
+        grading.get("status") == "graded",
+        "Nonempty completed patch has an unexpected grading status",
+    )
+    return "code_failed_upstream"
+
+
+def batch_evidence(cohort: Path, manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    batches = []
+    parent_hash = sha(cohort / "run-manifest.json")
+    for path in sorted((cohort / "grading-batches").glob("*/run-manifest.json")):
+        directory = path.parent
+        batch = read(path)
+        provenance = read(directory / "provenance.json")
+        tasks = batch["task_ids"]
+        require(
+            batch.get("parent_manifest_sha256") == parent_hash,
+            f"Parent manifest hash differs in {directory.name}",
+        )
+        require(
+            rooted(batch["parent_cohort"]) == cohort,
+            "Batch belongs to a different parent cohort",
+        )
+        require(
+            batch["implementation_revision"]
+            == REVISION
+            == provenance["implementation_revision"],
+            "Batch source revision differs",
+        )
+        require(
+            tasks == provenance["task_ids"], "Batch and provenance task order differs"
+        )
+        require(
+            len(tasks) == len(set(tasks)) and not seen.intersection(tasks),
+            "A task appears in multiple grading batches",
+        )
+        require(
+            set(tasks) <= set(manifest["task_ids"]),
+            "A grading batch includes an outside task",
+        )
+        require(
+            [row["instance_id"] for row in provenance["tasks"]] == tasks,
+            "Provenance task list differs",
+        )
+        workflow = read(directory / "upstream/workflow.json")
+        require(
+            type(workflow.get("run_id")) is int, "A batch has no workflow run identity"
+        )
+        require(
+            workflow.get("url")
+            == f"https://github.com/LikkIui/handoff-sieve/actions/runs/{workflow['run_id']}",
+            "Unexpected workflow URL",
+        )
+        for entry in provenance["tasks"]:
+            task = entry["instance_id"]
+            require(
+                sha(cohort / task / "report.json") == entry["report_sha256"],
+                f"Terminal report changed after export: {task}",
+            )
+            for condition in CONDITIONS:
+                parent_patch = patch_bytes(cohort, task, condition)
+                batch_patch = patch_bytes(directory, task, condition)
+                require(
+                    parent_patch == batch_patch,
+                    f"Exported patch differs: {task}/{condition}",
+                )
+                require(
+                    hashlib.sha256(parent_patch).hexdigest()
+                    == entry["patch_sha256"][condition],
+                    f"Patch hash differs: {task}/{condition}",
+                )
+            upstream = read(directory / "upstream" / f"{task}.json")
+            merged = read(cohort / "upstream" / f"{task}.json")
+            require(
+                upstream == merged,
+                f"Merged official result differs from its batch: {task}",
+            )
+        seen.update(tasks)
+        batches.append(
+            {
+                "batch": directory.name,
+                "task_ids": tasks,
+                "parent_manifest_sha256": parent_hash,
+                "provenance_sha256": sha(directory / "provenance.json"),
+                "workflow_run_id": workflow["run_id"],
+                "workflow_url": workflow["url"],
+            }
+        )
+    require(
+        seen == set(manifest["task_ids"]),
+        "Not all twenty tasks have verified exported grading provenance",
+    )
+    return batches
+
+
+def summarize(cohort: Path) -> tuple[dict[str, Any], str]:
+    manifest = read(cohort / "run-manifest.json")
+    dataset = read(ROOT / "evals/public_swe/data/manifest.json")
+    pilot = read(
+        ROOT
+        / "evals/public_swe/results/2026-10-11-development-native/run-manifest.json"
+    )
+    expected = dataset["splits"]["development"][10:]
+    tasks = manifest["task_ids"]
+    require(
+        len(tasks) == 20 == len(set(tasks)) and tasks == expected,
+        "Cohort is not the fixed remaining twenty development IDs",
+    )
+    require(
+        len(pilot["task_ids"]) == 10 and not set(tasks).intersection(pilot["task_ids"]),
+        "Pilot and remaining cohort overlap",
+    )
+    require(
+        set(tasks) | set(pilot["task_ids"]) == set(dataset["splits"]["development"]),
+        "Thirty-task development coverage differs",
+    )
+    require(
+        manifest["implementation_revision"] == REVISION,
+        "Implementation is not the frozen 9659fb2 cohort",
+    )
+    require(
+        manifest["dataset_revision"] == dataset["revision"]
+        and manifest["harness_revision"] == dataset["harness_revision"],
+        "Pinned dataset or grader revision differs",
+    )
+    require(
+        tuple(manifest["conditions"]) == CONDITIONS
+        and manifest["split"] == "development",
+        "Unexpected comparison conditions or split",
+    )
+    require(
+        manifest["research_steps"] == 8
+        and manifest["coder_steps"] == 24
+        and manifest["trials"] == 1
+        and manifest["automatic_retries"] == 0,
+        "Cohort execution budget or trial configuration differs",
+    )
+    require(manifest["handoff_tokens"] == 4000, "Unexpected compressed-context budget")
+    batches = batch_evidence(cohort, manifest)
+    research_records: list[tuple[Path, dict[str, Any]]] = []
+    phases = {
+        condition: {"preparation": [], "continuation": []} for condition in CONDITIONS
+    }
+    outcomes: dict[str, list[dict[str, Any]]] = {
+        condition: [] for condition in CONDITIONS
+    }
+    contexts: dict[str, dict[str, int]] = {condition: {} for condition in CONDITIONS}
+    task_statuses: Counter[str] = Counter()
+    controls = []
+    all_paths: set[Path] = set()
+    for task in tasks:
+        folder = cohort / task
+        report = read(folder / "report.json")
+        require(
+            report.get("instance_id") == task and report.get("status") in TERMINAL,
+            f"Task is not terminal: {task}",
+        )
+        task_statuses[report["status"]] += 1
+        condition_rows = report.get("conditions", [])
+        if report["status"] == "completed_candidates":
+            require(
+                [row.get("condition") for row in condition_rows] == list(CONDITIONS)
+                and report.get("source_unchanged") is True,
+                f"Incomplete or mutated shared state: {task}",
+            )
+        else:
+            require(
+                not condition_rows,
+                f"Setup failed after conditions began; manual integrity review required: {task}",
+            )
+        by_condition = {row["condition"]: row for row in condition_rows}
+        research = phase_records(folder / "research")
+        research_records.extend(research)
+        all_paths.update(path for path, _ in research)
+        grading = read(cohort / "upstream" / f"{task}.json")
+        require(
+            grading.get("instance_id") == task
+            and grading.get("harness_revision") == manifest["harness_revision"],
+            f"Official report identity differs: {task}",
+        )
+        require(
+            set(grading["outcomes"])
+            == {"gold_control", "unchanged_control", *CONDITIONS},
+            f"Official report is incomplete: {task}",
+        )
+        valid_controls = (
+            grading.get("controls_valid") is True
+            and grading["outcomes"]["gold_control"].get("resolved") is True
+            and grading["outcomes"]["unchanged_control"].get("resolved") is False
+        )
+        controls.append({"instance_id": task, "valid": valid_controls})
+        for condition in CONDITIONS:
+            row = by_condition.get(condition)
+            if row is not None:
+                require(
+                    row.get("status") in ROW_TERMINAL,
+                    f"Condition is not terminal: {task}/{condition}",
+                )
+            records = phase_records(folder / condition)
+            all_paths.update(path for path, _ in records)
+            preparation = (
+                [] if condition == "full_history" or not records else [records[0]]
+            )
+            continuation = records[len(preparation) :]
+            if preparation:
+                require(
+                    not preparation[0][1]["request"].get("tools"),
+                    "Preparation call was mistaken for a continuation",
+                )
+            require(
+                all(record["request"].get("tools") for _, record in continuation),
+                "Unexpected non-native continuation record",
+            )
+            if row is not None:
+                require(
+                    row.get("model_calls") == len(records),
+                    f"Condition request count differs from raw records: {task}/{condition}",
+                )
+            phases[condition]["preparation"].extend(preparation)
+            phases[condition]["continuation"].extend(continuation)
+            context = actual_context(row or {}, continuation)
+            context_tokens = (
+                COUNTER.count_text(context) if context is not None else None
+            )
+            if context_tokens is not None:
+                if row is not None and "handoff_tokens" in row:
+                    require(
+                        row["handoff_tokens"] == context_tokens,
+                        f"Saved context token estimate differs: {task}/{condition}",
+                    )
+                contexts[condition][task] = context_tokens
+            official = grading["outcomes"][condition]
+            candidate = patch_bytes(cohort, task, condition)
+            if row is not None and row["status"] == "candidate_generated":
+                require(
+                    bool(candidate), f"Generated candidate is empty: {task}/{condition}"
+                )
+            else:
+                require(
+                    not candidate,
+                    f"Non-candidate condition has an unexplained patch: {task}/{condition}",
+                )
+            category = classify(
+                report,
+                row,
+                research,
+                records,
+                preparation,
+                condition,
+                official,
+                valid_controls,
+                manifest["handoff_tokens"],
+            )
+            outcomes[condition].append(
+                {
+                    "instance_id": task,
+                    "category": category,
+                    "candidate_status": row.get("status")
+                    if row
+                    else "not_started_shared_failure",
+                    "candidate_error_type": row.get("error_type")
+                    if row
+                    else report.get("error_type"),
+                    "grading_status": official.get("status"),
+                    "raw_resolved": official.get("resolved"),
+                    "controls_valid": valid_controls,
+                    "patch_sha256": hashlib.sha256(candidate).hexdigest(),
+                    "handoff_tokens": context_tokens,
+                    "real_context_available": context is not None,
+                }
+            )
+    require(
+        all_paths == set(cohort.rglob("call-*.json")),
+        "Unaccounted or duplicate raw API call records exist",
+    )
+    all_records = research_records + [
+        item
+        for condition in CONDITIONS
+        for phase in phases[condition].values()
+        for item in phase
+    ]
+    interrupted_tasks = {
+        path.relative_to(cohort).parts[0]
+        for path, record in all_records
+        if record.get("status") != "completed"
+    }
+    uninterrupted_ids = [task for task in tasks if task not in interrupted_tasks]
+    common_ids = [
+        task for task in tasks if all(task in contexts[c] for c in CONDITIONS)
+    ]
+    comparison = {}
+    for condition in CONDITIONS:
+        values = list(contexts[condition].values())
+        common_values = [contexts[condition][task] for task in common_ids]
+        categories = Counter(row["category"] for row in outcomes[condition])
+        comparison[condition] = {
+            "successes": categories["success"],
+            "attempted_task_denominator": 20,
+            "recorded_acceptance_rate": categories["success"] / 20,
+            "outcome_categories": dict(categories),
+            "task_outcomes": outcomes[condition],
+            "actual_context_sample_count": len(values),
+            "actual_context_task_ids": [
+                task for task in tasks if task in contexts[condition]
+            ],
+            "mean_actual_handoff_tokens": round(sum(values) / len(values), 2)
+            if values
+            else None,
+            "common_context_sample_count": len(common_ids),
+            "mean_common_context_handoff_tokens": round(
+                sum(common_values) / len(common_values), 2
+            )
+            if common_values
+            else None,
+            "preparation_usage": usage(phases[condition]["preparation"], cohort),
+            "continuation_usage": usage(phases[condition]["continuation"], cohort),
+            "service_error_free_subset_successes": sum(
+                row["category"] == "success"
+                for row in outcomes[condition]
+                if row["instance_id"] in uninterrupted_ids
+            ),
+        }
+    summary = {
+        "kind": "remaining twenty fixed development attempts, independent upstream grading",
+        "split": "development",
+        "task_ids": tasks,
+        "distinct_attempted_tasks": 20,
+        "implementation_revision": REVISION,
+        "dataset_revision": manifest["dataset_revision"],
+        "harness_revision": manifest["harness_revision"],
+        "parent_manifest_sha256": sha(cohort / "run-manifest.json"),
+        "research_steps": 8,
+        "coder_steps": 24,
+        "trials": 1,
+        "automatic_retries": 0,
+        "task_terminal_statuses": dict(task_statuses),
+        "grading_controls": controls,
+        "all_grading_controls_valid": all(row["valid"] for row in controls),
+        "grading_batches": batches,
+        "raw_request_accounting": usage(all_records, cohort),
+        "shared_research_usage": usage(research_records, cohort),
+        "conditions": comparison,
+        "complete_three_condition_context_subset_task_ids": common_ids,
+        "service_error_free_paired_subset": {
+            "task_ids": uninterrupted_ids,
+            "task_count": len(uninterrupted_ids),
+            "criterion": "No raw research or condition request has a provider/transport error or interruption; budget rejections and code failures remain included",
+            "posthoc_diagnostic_only": True,
+            "success_counts": {
+                condition: comparison[condition]["service_error_free_subset_successes"]
+                for condition in CONDITIONS
+            },
+        },
+        "attempted_development_coverage": {
+            "earlier_pilot_task_ids": pilot["task_ids"],
+            "remaining_task_ids": tasks,
+            "distinct_attempted_total": 30,
+            "success_rates_combined": False,
+            "reason": "Earlier pilot and corrective repeats used different configurations; thirty is attempted distinct coverage, not thirty successful takeovers",
+        },
+        "limitations": [
+            "All success counts retain the complete twenty-task attempted denominator; outages, setup failures and grading errors are separately identified",
+            "Provider 503 requests without usage have unknown token consumption and billing; known reported tokens are not total spend",
+            "Context means use only recorded or actually sent receiver contexts and state their sample counts; complete-context subset IDs are explicit",
+            "One trial per development task and provider outages do not establish stable superiority or statistical significance",
+            "First-ten pilot and remaining-twenty success rates are not combined",
+            "The fixed 200-task formal evaluation is not part of this development report",
+        ],
+    }
+    lines = [
+        "# Remaining twenty development attempts",
+        "",
+        "This report retains all twenty preselected non-pilot development tasks. "
+        "It uses one trial per condition at implementation `9659fb2`, with eight "
+        "shared research operations and up to twenty-four source operations per coder. "
+        "Original upstream tests determine acceptance; the coder has no local test execution.",
+        "",
+        "| Condition | Valid official acceptance / all attempts | Actual-context samples | Mean handoff estimate | Preparation requests / known tokens | Continuation requests / known tokens |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    labels = {
+        "full_history": "Full History",
+        "receiver_aware_summary": "Receiver-aware Summary",
+        "model_handoff": "HandoffSieve",
+    }
+    for condition in CONDITIONS:
+        row = comparison[condition]
+        mean = row["mean_actual_handoff_tokens"]
+        cells = []
+        for phase in ("preparation_usage", "continuation_usage"):
+            phase_usage = row[phase]
+            cell = (
+                f"{phase_usage['requests']} / "
+                f"{phase_usage['known_reported_usage']['total_tokens']:,}"
+            )
+            missing = phase_usage["requests_without_reported_total_usage"]
+            if missing:
+                cell += f" (+{missing} unknown usage)"
+            cells.append(cell)
+        lines.append(
+            f"| {labels[condition]} | {row['successes']}/20 | {row['actual_context_sample_count']} | {mean if mean is not None else 'unavailable'} | {' | '.join(cells)} |"
+        )
+    overall = summary["raw_request_accounting"]
+    shared = summary["shared_research_usage"]
+    lines.extend(
+        [
+            "",
+            "## Failures and denominator",
+            "",
+            "A valid acceptance requires successful official controls and an accepted candidate. "
+            "Provider outages, shared setup failures or interruptions, context budget rejections, "
+            "missing evidence, no patch, code failures, and grader problems remain separate below. "
+            "The full denominator is twenty for every condition; uncompleted model execution is "
+            "not treated as evidence that its generated code would have failed.",
+            "",
+        ]
+    )
+    for condition in CONDITIONS:
+        counts = ", ".join(
+            f"{name}: {count}"
+            for name, count in comparison[condition]["outcome_categories"].items()
+        )
+        lines.append(f"- {labels[condition]}: {counts}.")
+    lines.extend([
+        "",
+        "### Paired tasks without recorded service interruption",
+        "",
+        "This secondary, post-hoc diagnostic excludes only tasks with a raw provider/transport error "
+        "or interruption in any research or condition request. Budget rejections and code failures "
+        "remain included; the primary twenty-task denominator above is unchanged. It is not a "
+        "replacement cohort or evidence of stable superiority.",
+        "",
+        "| Condition | Acceptance on the same service-error-free tasks |",
+        "|---|---:|",
+        *[
+            f"| {labels[c]} | {comparison[c]['service_error_free_subset_successes']}/{len(uninterrupted_ids)} |"
+            for c in CONDITIONS
+        ],
+        "",
+        "Task IDs: " + ", ".join(f"`{task}`" for task in uninterrupted_ids) + ".",
+    ])
+    lines.extend(
+        [
+            "",
+            f"Official controls valid: **{sum(row['valid'] for row in controls)}/20**. "
+            "Every task's raw condition status, official result and patch hash appears in "
+            "[summary.json](summary.json). Invalid controls and grader infrastructure errors "
+            "are not certified task successes.",
+            "",
+            "## Context and cost boundaries",
+            "",
+            f"The raw records contain **{overall['requests']} API requests**, "
+            f"**{overall['completed_request_records']} completed request records**, and "
+            f"**{overall['known_reported_usage']['total_tokens']:,} known provider-reported tokens**. "
+            f"**{overall['requests_without_reported_total_usage']} requests lack reported total usage**; "
+            "their consumption and billing are unknown. Known usage is not total spend or a bill.",
+            "",
+            f"Shared research used {shared['requests']} requests and "
+            f"{shared['known_reported_usage']['total_tokens']:,} known tokens, counted once across conditions. "
+            "For summary and model selection, preparation is the first actual request in that "
+            "condition folder, including rejected or incomplete attempts. Later native tool "
+            "requests are continuation cost. Full History makes no preparation model request. "
+            "The detailed records include phase-specific missing-usage counts and HTTP error statuses.",
+            "",
+            "Handoff means describe only saved contexts or the actual initial receiver request, "
+            "including requests later rejected by the provider. No context is invented for a "
+            "preparation failure. Different sample counts must not be interpreted as a matched "
+            "comparison. The complete three-condition context subset is listed explicitly:",
+            "",
+        ]
+    )
+    lines.extend(f"- `{task}`" for task in common_ids)
+    if not common_ids:
+        lines.append("No task has an actual receiver context for all three conditions.")
+    lines.extend(
+        [
+            "",
+            "| Condition | Same-subset contexts | Mean handoff estimate |",
+            "|---|---:|---:|",
+        ]
+    )
+    for condition in CONDITIONS:
+        mean = comparison[condition]["mean_common_context_handoff_tokens"]
+        lines.append(
+            f"| {labels[condition]} | {len(common_ids)} | {mean if mean is not None else 'unavailable'} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Evidence provenance",
+            "",
+            "Terminal report hashes, original and exported patch bytes, parent manifest hashes, "
+            "grader revision, and merged official reports were checked before writing this report. "
+            "Grading batches are exports of the same candidates, not new model trials:",
+            "",
+        ]
+    )
+    lines.extend(
+        f"- `{batch['batch']}`: [workflow {batch['workflow_run_id']}]({batch['workflow_url']}) "
+        f"({len(batch['task_ids'])} tasks)."
+        for batch in batches
+    )
+    lines.extend(
+        [
+            "",
+            "The final `run-manifest.json` and all batch `upstream/workflow.json` identities "
+            "are preserved; this utility does not overwrite them.",
+            "",
+            "## What this result supports",
+            "",
+            "The first ten pilot IDs plus these twenty IDs cover **thirty distinct attempted "
+            "development tasks**. That is not thirty successes, and their success rates are "
+            "not combined because pilot configurations and corrective repeats differ. "
+            "Provider outages and a single development trial do not justify a claim of stable "
+            "superiority. The frozen 200-task formal evaluation is separate and is not represented here.",
+            "",
+        ]
+    )
+    lines.extend(["", 'To audit and reproduce this summary without model calls, run from the repository root:\n\n```bash\npython evals/public_swe/results/2026-10-11-development-remaining20/summarize-reproduce.py.txt\n```', ""])
+    return summary, "\n".join(lines)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--cohort", type=Path, default=DEFAULT)
+    args = parser.parse_args()
+    cohort = args.cohort.resolve()
+    require(
+        cohort.is_relative_to(ROOT / "evals/public_swe/results"),
+        "Output cohort must be within public results",
+    )
+    summary, markdown = summarize(cohort)
+    (cohort / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (cohort / "README.md").write_text(markdown, encoding="utf-8")
+    print(
+        json.dumps(
+            {
+                "cohort": cohort.as_posix(),
+                "attempted_tasks": 20,
+                "requests": summary["raw_request_accounting"]["requests"],
+                "successes": {
+                    name: row["successes"]
+                    for name, row in summary["conditions"].items()
+                },
+            }
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,94 @@
+"""Audit the completed corrective xarray run; run from the repository root."""
+
+import hashlib
+import json
+from pathlib import Path
+
+ROOT = Path.cwd()
+RESULTS = ROOT / "evals/public_swe/results"
+RUN = RESULTS / "2026-10-11-budget-takeover-v2"
+TASK = "pydata__xarray-6721"
+
+
+def read(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def require(ok, message):
+    if not ok:
+        raise ValueError(message)
+
+
+def main():
+    report = read(RUN / TASK / "report.json")
+    status = read(RUN / "run-status.json")
+    grading = read(RUN / "upstream" / f"{TASK}.json")
+    workflow = read(RUN / "upstream" / "workflow.json")
+    require(status["status"] == "completed", "Receiver is not terminal")
+    require(grading["instance_id"] == TASK, "Wrong official task")
+    require(grading["controls_valid"] is True, "Invalid official controls")
+    require(grading["outcomes"]["gold_control"]["resolved"] is True, "Gold failed")
+    require(grading["outcomes"]["unchanged_control"]["resolved"] is False, "Unchanged passed")
+    for key in ("source_checkout_unchanged", "input_files_unchanged", "implementation_unchanged_during_run", "baseline_patches_reused_verbatim"):
+        require(status[key] is True, f"Integrity flag failed: {key}")
+    rows = {}
+    for row in report["conditions"]:
+        name = row["condition"]
+        patch = (RUN / TASK / row["patch_file"]).read_bytes()
+        digest = hashlib.sha256(patch).hexdigest()
+        require(digest == row["patch_sha256"], f"Patch hash differs: {name}")
+        if row["candidate_reused"]:
+            original = RESULTS / "2026-10-11-development-remaining20" / TASK / row["patch_file"]
+            require(original.read_bytes() == patch, f"Baseline not verbatim: {name}")
+            costs = row["reused_original_result"]
+            calls = costs["model_calls"]
+            tokens = costs["reported_tokens"]
+        else:
+            require(name == "model_handoff" and row["new_trial"] is True, "Unexpected new trial")
+            require(row["completed_model_calls"] == 13, "Incomplete new calls")
+            prep = row["reused_preparation"]
+            calls = row["model_calls"] + prep["model_calls"]
+            tokens = row["reported_tokens"] + prep["reported_tokens"]
+            require(row["handoff_tokens"] <= 4000, "Packet over budget")
+        official = grading["outcomes"][name]
+        rows[name] = {
+            "official_accepted": official["status"] == "graded" and official["resolved"] is True,
+            "handoff_estimated_tokens": row["handoff_tokens"],
+            "preparation_and_continuation_calls": calls,
+            "preparation_and_continuation_reported_tokens": tokens,
+            "baseline_reused": row["candidate_reused"],
+            "patch_sha256": digest,
+        }
+    records = [read(p) for p in sorted((RUN / TASK / "model_handoff").glob("call-*.json"))]
+    require(len(records) == 13 and all(r["status"] == "completed" for r in records), "Raw requests incomplete")
+    require(sum(r["response"]["usage"]["total_tokens"] for r in records) == 100297, "Raw usage differs")
+    selection = read(RESULTS / "2026-10-11-budget-selection-v1" / "summary.json")
+    selected = next(r for r in selection["tasks"] if r["instance_id"] == TASK)
+    require(selected["packet_tokens"] == 3830 and selected["provider_total_tokens"] == 18184, "Preparation differs")
+    summary = {
+        "kind": "single development corrective retake, reused baselines",
+        "task_ids": [TASK],
+        "new_distinct_tasks": 0,
+        "new_trials_by_condition": status["new_trials_by_condition"],
+        "controls_valid": True,
+        "workflow": workflow,
+        "conditions": rows,
+        "new_receiver_usage": status["new_receiver_usage"],
+        "reused_preparation_usage": status["reused_preparation_usage"],
+        "preceding_transport_failure": {"directory": "2026-10-11-budget-takeover-v1", "requests": 1, "reported_usage": None, "billing_unknown": True},
+        "shared_research_reused": True,
+        "primary_twenty_task_results_unchanged": True,
+        "limitations": [
+            "Selected after a budget failure; one new receiver trial on an already-used development task",
+            "Baseline patches and preparation are reused; this is not three newly matched trials",
+            "The failed prior transport request has unknown consumption; known provider tokens are not billing",
+            "A valid packet and this accepted repair do not establish general superiority",
+            "Frozen candidate reports record grading as pending; this final summary uses independent upstream results",
+        ],
+    }
+    (RUN / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps({"accepted": {k: v["official_accepted"] for k, v in rows.items()}, "costs": {k: v["preparation_and_continuation_reported_tokens"] for k, v in rows.items()}}))
+
+
+if __name__ == "__main__":
+    main()
