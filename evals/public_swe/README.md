@@ -39,12 +39,16 @@ Supply the credential at the hidden prompt or through `OPENAI_API_KEY`. It is
 never stored in call records. Calls use the Responses API with automatic
 retries disabled. `--git-proxy` optionally configures public source fetching.
 
-A read-only researcher investigates the original checkout with three source
+A read-only researcher investigates the original checkout with eight source
 tool actions, followed by a request to finish its findings. Its actual history
 is frozen. Three independent coder checkouts then receive full history, a
 strong receiver-aware model summary, or HandoffSieve's model-selected original
 spans. Summary and selection have the same contract and 4,000-token estimated
-handoff budget. Each coder has at most eight source tool actions.
+handoff budget, including the task goal and JSON overhead. Each coder has at
+most 24 source tool actions. The common prompt does not repeat the packet goal.
+These are development defaults: the preserved initial pilot used three
+research actions and eight coding actions, so its outcomes cannot be pooled
+with the stronger configuration as trials of one implementation.
 
 Portable tools provide listing, literal search, bounded reads and exact source
 edits. They do not execute local tests or shell commands. This initial harness
@@ -101,6 +105,19 @@ the implementation and experiment settings are frozen.
 - [Two-task larger-budget retest](results/2026-10-11-takeover-retest/README.md):
   2/2, 1/2, 1/2 respectively; same tasks, disclosed changes and reused preparation.
 
-The next step is better observed dependency context and reliable visible-test
-feedback on development tasks. The constrained source-only baseline is not yet
-strong enough for a meaningful formal comparison. No new adapters are planned.
+The opt-in selector now preserves contiguous observed code windows and their
+original read context. [The same-state selector retest](results/2026-10-11-context-selection/README.md)
+reduced provider input tokens 33.97%; this is preparation cost, not task success.
+
+The independent [`public-swe-visible-feedback`](../../.github/workflows/public-swe-visible.yml)
+workflow tests original repository code without loading grading answers. Its
+first supported check is a frozen command from Pylint's existing tests. Each
+condition has a fresh container and unchanged-source control. Candidate hashes,
+source revisions, original test identity and bounded output are recorded.
+Only a condition's own visible feedback enters its receiver continuation;
+hidden acceptance reports remain separate. This is one development batch
+feedback step, not a general interactive test tool for the source-only agent.
+
+Next, complete the 30-task development comparison with matching tools, budgets
+and receiver boundaries. No new adapters are planned before task quality is
+demonstrated, and the held-out 200 tasks remain unused.
