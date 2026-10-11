@@ -48,6 +48,7 @@ class SourceUnit(BaseModel):
     content: str | dict[str, Any] | list[Any]
     estimated_tokens: int
     context_source_ids: list[str] = Field(default_factory=list)
+    estimated_insertion_tokens: int | None = Field(default=None, ge=0)
 
 
 class SelectionRequest(BaseModel):
@@ -58,6 +59,8 @@ class SelectionRequest(BaseModel):
     receiver: str
     contract: ReceiverContract
     units: list[SourceUnit]
+    fixed_packet_tokens: int | None = Field(default=None, ge=0)
+    source_budget_tokens: int | None = Field(default=None, ge=0)
 
     def to_selector_text(self) -> str:
         """Send task content and hints, omitting host-only source coordinates."""
@@ -70,12 +73,17 @@ class SelectionRequest(BaseModel):
                 if not item[key]:
                     item.pop(key)
             catalog.append(item)
+        payload: dict[str, Any] = {
+            "receiver": self.receiver,
+            "contract": self.contract.model_dump(mode="json"),
+            "units": catalog,
+        }
+        for key in ("fixed_packet_tokens", "source_budget_tokens"):
+            value = getattr(self, key)
+            if value is not None:
+                payload[key] = value
         return json.dumps(
-            {
-                "receiver": self.receiver,
-                "contract": self.contract.model_dump(mode="json"),
-                "units": catalog,
-            },
+            payload,
             ensure_ascii=False,
             separators=(",", ":"),
         )
@@ -493,6 +501,133 @@ def _packet_for(
     )
 
 
+def _budgeted_request(
+    source: HandoffEnvelope,
+    catalog: list[SourceUnit],
+    contract: ReceiverContract,
+    pipeline: HandoffPipeline,
+) -> SelectionRequest:
+    """Expose fixed cost and conservative isolated insertion costs for planning.
+
+    Count the actual goal and packet skeleton once. Item overhead comes from the
+    canonical serializer, cached per origin with an empty goal. Content and
+    compiler references are counted separately, including possible merged-ref
+    metadata and preceding blank text. Context closures count each unit once.
+    Shared context and coalescing can lower the sum; arbitrary/BPE counters are
+    not additive, so these hints never replace the final whole-packet check.
+    """
+    counter = pipeline.token_counter
+    fixed = counter.count_text(
+        HandoffPacket(
+            sender=source.sender, receiver=source.receiver, goal=contract.goal
+        ).to_receiver_text()
+    )
+    if fixed > contract.max_tokens:
+        raise BudgetExceededError(
+            f"Task goal and empty canonical packet need {fixed} estimated tokens; "
+            f"budget is {contract.max_tokens}. No selector call was made."
+        )
+    short_contract = contract.model_copy(update={"goal": ""})
+    message_sections: list[SectionName] = [
+        section
+        for section in (*contract.required, *contract.preferred)
+        if section != "artifacts"
+    ]
+    message_section: SectionName = (
+        max(message_sections, key=len) if message_sections else "evidence"
+    )
+    units = {unit.source_id: unit for unit in catalog}
+    overheads: dict[tuple[str, int], int] = {}
+    item_costs: dict[str, int] = {}
+    previous: dict[tuple[str, int], SourceUnit] = {}
+    punctuation = counter.count_text(",")
+    for unit in catalog:
+        origin = (unit.source_type, unit.source_index)
+        is_message = unit.source_type == "message"
+        if origin not in overheads:
+            section: SectionName = message_section if is_message else "artifacts"
+            packet = _packet_for(
+                source,
+                units,
+                [
+                    SourceSelection(
+                        source_id=unit.source_id, section=section, essential=True
+                    )
+                ],
+                short_contract,
+            )
+            item = json.loads(packet.to_receiver_text())[section][0]
+            # Empty dynamic values retain their JSON field/quote overhead. Count
+            # the real values below; the extra quotes give a planning margin.
+            item["content"] = ""
+            item["metadata"][SOURCE_ID_KEY] = ""
+            if is_message:
+                item["metadata"][SOURCE_IDS_KEY] = [""]
+            overheads[origin] = counter.count_text(
+                json.dumps(
+                    item, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+                )
+            )
+        content = unit.content
+        prior = previous.get(origin)
+        if (
+            is_message
+            and prior is not None
+            and prior.end is not None
+            and unit.start is not None
+            and isinstance(content, str)
+        ):
+            original = source.messages[unit.source_index].content
+            if isinstance(original, str):
+                gap = original[prior.end : unit.start]
+                if not gap.strip():
+                    content = gap + content
+        item_costs[unit.source_id] = (
+            overheads[origin]
+            + counter.count_text(
+                json.dumps(
+                    content, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+                )
+            )
+            + (2 if is_message else 1) * counter.count_text(json.dumps(unit.source_id))
+            + punctuation
+        )
+        previous[origin] = unit
+    closures: dict[str, set[str]] = {}
+    visiting: set[str] = set()
+
+    def closure(source_id: str) -> set[str]:
+        if source_id in closures:
+            return closures[source_id]
+        if source_id in visiting or source_id not in units:
+            raise ContractError("Invalid source context references")
+        visiting.add(source_id)
+        found = {source_id}
+        for parent in units[source_id].context_source_ids:
+            found.update(closure(parent))
+        visiting.remove(source_id)
+        closures[source_id] = found
+        return found
+
+    return SelectionRequest(
+        receiver=source.receiver,
+        contract=contract.model_copy(deep=True),
+        units=[
+            unit.model_copy(
+                deep=True,
+                update={
+                    "estimated_insertion_tokens": sum(
+                        item_costs[entry] for entry in closure(unit.source_id)
+                    ),
+                },
+            )
+            for unit in catalog
+        ],
+        fixed_packet_tokens=fixed,
+        source_budget_tokens=contract.max_tokens - fixed,
+    )
+
+
 async def compile_model_handoff(
     envelope: HandoffEnvelope,
     contract: ReceiverContract,
@@ -515,11 +650,7 @@ async def compile_model_handoff(
     if not catalog:
         raise ContractError("Sender state contains no nonblank source units")
     response = await selector.select(
-        SelectionRequest(
-            receiver=source.receiver,
-            contract=contract.model_copy(deep=True),
-            units=[unit.model_copy(deep=True) for unit in catalog],
-        )
+        _budgeted_request(source, catalog, contract, active)
     )
     plan = response.plan
     essential_ids = _validate_plan(plan, catalog, contract)

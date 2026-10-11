@@ -52,9 +52,21 @@ If the source lacks a need, put its index in missing_needs; do not invent
 evidence. Select at least one item in each required section, if supported by
 the source. Mark indispensable additional selections essential=true, and
 supporting optional context essential=false. Need coverage and required-section
-items are always essential locally. Use estimated_tokens only for planning:
-the final JSON includes item metadata and overhead, checked locally. Prefer a
-small sufficient selection well below max_tokens; do not fill unused budget.
+items are always essential locally. Cite the smallest sufficient evidence set
+for each need, not every related unit: need_indices pins every cited unit even
+when essential=false. Additional relevant material may be optional, with empty
+need_indices. Do not mark an item essential merely because it is relevant.
+fixed_packet_tokens is the goal and empty canonical JSON cost already spent;
+source_budget_tokens is max_tokens minus that fixed cost, available for source.
+estimated_tokens is bare content only. Prefer estimated_insertion_tokens for
+planning: it is the conservative isolated cost of item JSON, compiler source
+references and all unique observed context for that unit. Do not add its context
+cost again or subtract another unit's full estimate as a shared-context discount.
+Summing multiple insertion estimates may overcount shared context and item
+metadata saved by merging. These are estimates, not a guarantee of fitting;
+the final whole-packet budget is checked locally. If older requests omit these
+fields, account for the goal, source metadata and context yourself. Prefer a
+small sufficient selection below source_budget_tokens; do not fill unused space.
 Before returning, remove selections which add no information needed for this
 receiver. Do not keep redundant observations when the requested policy and
 implementation already suffice; do keep observations if explicitly requested.
@@ -113,6 +125,8 @@ def _selector_payload(request: SelectionRequest) -> tuple[str, dict[str, Any]]:
             item["context_indices"] = [
                 indices[source_id] for source_id in unit.context_source_ids
             ]
+        if unit.estimated_insertion_tokens is not None:
+            item["estimated_insertion_tokens"] = unit.estimated_insertion_tokens
         catalog.append(item)
     payload = {
         "receiver": request.receiver,
@@ -120,6 +134,10 @@ def _selector_payload(request: SelectionRequest) -> tuple[str, dict[str, Any]]:
         "sources": sources,
         "units": catalog,
     }
+    for key in ("fixed_packet_tokens", "source_budget_tokens"):
+        value = getattr(request, key)
+        if value is not None:
+            payload[key] = value
     schema = _IndexedPlan.model_json_schema()
     properties = schema["$defs"]["_IndexedSelection"]["properties"]
     properties["unit_index"]["maximum"] = len(request.units) - 1

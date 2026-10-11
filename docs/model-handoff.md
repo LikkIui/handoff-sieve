@@ -53,6 +53,13 @@ extra. No compression model, GPU, vector database, or extra service is needed.
    Host-only character offsets and indices are retained locally but omitted
    from the selector payload; nonempty task hints and metadata remain visible.
    The OpenAI payload shares repeated message metadata across its units.
+   Before selection, the compiler counts the empty canonical packet, including
+   the complete goal, and exposes the remaining source budget. Each unit has a
+   conservative isolated insertion estimate that includes JSON, references,
+   and observed context. Shared context and merging can reduce those estimates;
+   they are planning hints, especially with custom/BPE counters. The final
+   rendered packet remains the budget authority. If the goal and empty packet
+   alone exceed the budget, compilation stops before any selector call.
 3. One selector call returns source IDs, categories, essential flags, ranked
    optional selections, and source references covering each need. It does not
    generate the task facts or edit the sender's code. The OpenAI backend's
