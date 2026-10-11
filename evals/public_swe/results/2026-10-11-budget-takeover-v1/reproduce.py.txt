@@ -1,0 +1,319 @@
+"""Corrective development takeover for one already used xarray task.
+
+Only HandoffSieve gets a fresh receiver run. Full history and strong summary
+reuse their original patches, contexts and recorded results exactly; neither
+gets a new trial or model call. No existing candidate or grading result is
+passed to the new receiver. The only handoff is the new canonical packet.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import copy
+import getpass
+import hashlib
+import json
+import shutil
+from pathlib import Path
+from typing import Any
+
+from openai import AsyncOpenAI
+
+from evals.public_swe.repository import RepositoryTools, fork_source, git
+from evals.public_swe.run import CONDITIONS, Recorder, agent, receiver_prompt, save
+from handoff_sieve import ApproxTokenCounter, ModelHandoffCompilation, ReceiverContract
+
+ROOT = Path(__file__).resolve().parents[1]
+TASK_ID = 'pydata__xarray-6721'
+BASE_COMMIT = 'cc183652bf6e1273e985e1c4b3cba79c896c1193'
+SOURCE_RUN = ROOT / 'evals/public_swe/results/2026-10-11-development-remaining20'
+SELECTED_RUN = ROOT / 'evals/public_swe/results/2026-10-11-budget-selection-v1'
+OUTPUT = ROOT / 'evals/public_swe/results/2026-10-11-budget-takeover-v1'
+ORIGINAL_CHECKOUT = ROOT / 'work/public-swe-development-remaining20' / TASK_ID / 'source'
+WORK = ROOT / 'work/public-swe-budget-takeover-v1'
+MODEL = 'gpt-5.6-sol'
+BASE_URL = 'https://ckffai.com/v1'
+CODER_STEPS = 24
+COUNTER = ApproxTokenCounter()
+IMPLEMENTATION_FILES = (
+    'evals/public_swe/run.py', 'evals/public_swe/repository.py',
+    'src/handoff_sieve/compiler.py', 'src/handoff_sieve/tokens.py',
+)
+
+
+def sha256(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def relative(path: Path) -> str:
+    return path.relative_to(ROOT).as_posix()
+
+
+def load_inputs() -> dict[str, Any]:
+    """Check and freeze all public inputs before creating output or using API."""
+    if tuple(CONDITIONS) != ('full_history', 'receiver_aware_summary', 'model_handoff'):
+        raise ValueError('Unexpected official grading condition names')
+    source = SOURCE_RUN / TASK_ID
+    selected = SELECTED_RUN / TASK_ID
+    paths = {
+        'source_manifest': SOURCE_RUN / 'run-manifest.json',
+        'selection_manifest': SELECTED_RUN / 'run-manifest.json',
+        'sender': source / 'sender.json',
+        'contract': source / 'contract.json',
+        'original_report': source / 'report.json',
+        'research': source / 'research.json',
+        'compilation': selected / 'compilation.json',
+        'selection_report': selected / 'report.json',
+        'selected_sender': selected / 'sender.json',
+        'selected_contract': selected / 'contract.json',
+    }
+    for condition in CONDITIONS[:2]:
+        paths[f'{condition}_patch'] = source / f'{condition}.patch'
+        paths[f'{condition}_continuation'] = source / f'{condition}-continuation.json'
+    files = {name: path.read_bytes() for name, path in paths.items()}
+    original = json.loads(files['original_report'])
+    source_manifest = json.loads(files['source_manifest'])
+    selection_manifest = json.loads(files['selection_manifest'])
+    selection_report = json.loads(files['selection_report'])
+    task = original['task']
+    if task['instance_id'] != TASK_ID or task['base_commit'] != BASE_COMMIT:
+        raise ValueError('Original task differs from the fixed xarray task/base')
+    if task['repo'] != 'pydata/xarray':
+        raise ValueError('Unexpected original repository')
+    if original.get('status') != 'completed_candidates':
+        raise ValueError('Original xarray run must be terminal before this retest')
+    if TASK_ID not in source_manifest['task_ids'] or TASK_ID not in selection_manifest['task_ids']:
+        raise ValueError('Fixed task is absent from the existing source cohorts')
+    if source_manifest['model'] != MODEL or source_manifest['coder_steps'] != CODER_STEPS:
+        raise ValueError('Retest receiver configuration differs from the original')
+    if selection_manifest['model'] != MODEL or selection_report['status'] != 'valid_packet':
+        raise ValueError('The new budget-hint packet must have passed local compilation')
+    if files['sender'] != files['selected_sender'] or files['contract'] != files['selected_contract']:
+        raise ValueError('New packet was selected from different source state or contract')
+    if selection_report['sender_sha256'] != sha256(files['sender']):
+        raise ValueError('Selection report sender hash differs from frozen source')
+    if selection_report['contract_sha256'] != sha256(files['contract']):
+        raise ValueError('Selection report contract hash differs from frozen source')
+    contract = ReceiverContract.model_validate_json(files['contract'])
+    compilation = ModelHandoffCompilation.model_validate_json(files['compilation'])
+    context = compilation.packet.to_receiver_text()
+    if compilation.packet.goal != contract.goal or contract.goal != ('Fix this GitHub issue:\n' + task['problem_statement']).strip():
+        raise ValueError('The task goal was altered')
+    if contract.max_tokens != 4000 or COUNTER.count_text(context) > contract.max_tokens:
+        raise ValueError('The new canonical packet exceeds the original handoff budget')
+    if compilation.packet.receiver != 'coder':
+        raise ValueError('The packet targets an unexpected receiver')
+    baseline_rows = {}
+    for condition in CONDITIONS[:2]:
+        row = next(item for item in original['conditions'] if item['condition'] == condition)
+        if row.get('status') != 'candidate_generated' or not files[f'{condition}_patch']:
+            raise ValueError(f'Original {condition} has no completed candidate to reuse')
+        if json.loads(row['context']).get('goal') != contract.goal:
+            raise ValueError(f'Original {condition} context lacks the unaltered goal')
+        if COUNTER.count_text(row['context']) != row['handoff_tokens']:
+            raise ValueError(f'Original {condition} handoff count changed')
+        baseline_rows[condition] = copy.deepcopy(row)
+    if git(ORIGINAL_CHECKOUT, 'rev-parse', 'HEAD').strip() != BASE_COMMIT:
+        raise ValueError('Original source checkout differs from the fixed public base')
+    if git(ORIGINAL_CHECKOUT, 'status', '--porcelain'):
+        raise ValueError('Original source checkout is not clean')
+    return {
+        'files': files, 'paths': paths, 'original': original,
+        'source_manifest': source_manifest, 'selection_report': selection_report,
+        'task': task, 'context': context, 'baseline_rows': baseline_rows,
+    }
+
+
+def new_usage(recorder: Recorder) -> dict[str, Any]:
+    usage = [
+        record['response']['usage']
+        for record in recorder.records
+        if isinstance(record.get('response', {}).get('usage'), dict)
+        and isinstance(record['response']['usage'].get('total_tokens'), int)
+    ]
+    return {
+        'model_calls': len(recorder.records),
+        'completed_model_calls': sum(item.get('status') == 'completed' for item in recorder.records),
+        'usage_reported_calls': len(usage),
+        'usage_unavailable_calls': len(recorder.records) - len(usage),
+        'reported_tokens': sum(item['total_tokens'] for item in usage),
+        'request_seconds': round(sum(item.get('seconds', 0) for item in recorder.records), 3),
+    }
+
+
+async def main(check_sources_only: bool = False) -> None:
+    inputs = load_inputs()
+    if check_sources_only:
+        print(json.dumps({
+            'status': 'frozen_inputs_available', 'task_ids': [TASK_ID],
+            'new_distinct_tasks': 0, 'new_trials_by_condition': {
+                'full_history': 0, 'receiver_aware_summary': 0, 'model_handoff': 1,
+            },
+            'packet_tokens': COUNTER.count_text(inputs['context']),
+            'api_calls': 0, 'output_created': False,
+        }), flush=True)
+        return
+
+    if OUTPUT.exists() or WORK.exists():
+        raise FileExistsError('Corrective output/work already exists; do not silently rerun')
+    code_hashes = {name: sha256((ROOT / name).read_bytes()) for name in IMPLEMENTATION_FILES}
+    revision = git(ROOT, 'rev-parse', 'HEAD').strip()
+    input_hashes = {relative(path): sha256(inputs['files'][name]) for name, path in inputs['paths'].items()}
+    OUTPUT.mkdir(parents=True, exist_ok=False)
+    WORK.mkdir(parents=True, exist_ok=False)
+    folder = OUTPUT / TASK_ID
+    folder.mkdir(exist_ok=False)
+    shutil.copyfile(__file__, OUTPUT / 'reproduce.py.txt')
+    save(OUTPUT / 'run-manifest.json', {
+        'kind': 'corrective development single-task budget-hint takeover',
+        'task_ids': [TASK_ID], 'conditions': list(CONDITIONS),
+        'source_run': relative(SOURCE_RUN), 'selection_run': relative(SELECTED_RUN),
+        'new_distinct_tasks': 0,
+        'new_trials_by_condition': {'full_history': 0, 'receiver_aware_summary': 0, 'model_handoff': 1},
+        'baseline_candidates_reused_verbatim': True,
+        'baseline_reuse_is_not_an_independent_trial': True,
+        'generalization_or_causal_superiority_claimed': False,
+        'implementation_revision': revision,
+        'implementation_file_sha256': code_hashes,
+        'implementation_working_tree_changes': git(ROOT, 'status', '--porcelain', '--', *IMPLEMENTATION_FILES).strip(),
+        'input_file_sha256': input_hashes,
+        'script_sha256': sha256(Path(__file__).read_bytes()),
+        'dataset_revision': inputs['source_manifest']['dataset_revision'],
+        'harness_revision': inputs['source_manifest']['harness_revision'],
+        'split': 'development', 'model': MODEL, 'model_alias_identity_verified': False,
+        'base_url': BASE_URL, 'coder_steps': CODER_STEPS, 'automatic_retries': 0,
+        'maximum_new_model_calls': CODER_STEPS + 1,
+        'context_preparation': 'reuse separately recorded budget-selection packet; zero new preparation calls',
+        'research': 'reuse frozen original read-only research; zero new research calls',
+        'receiver_boundary': 'new receiver sees canonical packet and original source checkout only',
+        'receiver_prompt': 'shared evals.public_swe.run.receiver_prompt',
+        'existing_candidates_passed_to_model': False,
+        'official_or_visible_grading_passed_to_model': False,
+        'success_results': 'pending independent upstream grading',
+        'usage_without_reported_usage_is_unknown': True,
+    })
+    for name, target in (
+        ('sender', 'sender.json'), ('contract', 'contract.json'),
+        ('research', 'research.json'), ('original_report', 'original-task-report.json'),
+        ('compilation', 'model-compilation.json'), ('selection_report', 'selection-report.json'),
+    ):
+        (folder / target).write_bytes(inputs['files'][name])
+
+    report = {
+        'instance_id': TASK_ID, 'task': inputs['task'], 'conditions': [],
+        'grading_status': 'not_run', 'kind': 'corrective development single-task',
+        'new_distinct_tasks': 0,
+        'reused_research': copy.deepcopy(inputs['original'].get('research')),
+    }
+    for condition in CONDITIONS[:2]:
+        original_row = inputs['baseline_rows'][condition]
+        (folder / f'{condition}.patch').write_bytes(inputs['files'][f'{condition}_patch'])
+        (folder / f'{condition}-continuation.json').write_bytes(inputs['files'][f'{condition}_continuation'])
+        (folder / f'{condition}-context.txt').write_text(original_row['context'], encoding='utf-8', newline='')
+        row = {
+            'condition': condition, 'status': original_row['status'],
+            'acceptance': None, 'grading_status': 'not_run',
+            'candidate_reused': True, 'new_trial': False,
+            'reuse_source': relative(SOURCE_RUN / TASK_ID),
+            'patch_file': f'{condition}.patch',
+            'patch_sha256': sha256(inputs['files'][f'{condition}_patch']),
+            'context': original_row['context'], 'handoff_tokens': original_row['handoff_tokens'],
+            'model_calls': 0, 'reported_tokens': 0, 'request_seconds': 0,
+            'preparation': {'model_calls': 0, 'reported_tokens': 0, 'request_seconds': 0},
+            'reused_original_result': original_row,
+        }
+        report['conditions'].append(row)
+        save(folder / f'{condition}-report.json', row)
+    context = inputs['context']
+    (folder / 'model_handoff-context.txt').write_text(context, encoding='utf-8', newline='')
+    save(folder / 'report.json', report)
+
+    target = WORK / TASK_ID / 'model_handoff'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(fork_source, ORIGINAL_CHECKOUT, target)
+    if git(target, 'rev-parse', 'HEAD').strip() != BASE_COMMIT or git(target, 'status', '--porcelain'):
+        raise ValueError('Fresh receiver checkout differs from the clean original source')
+    credential = getpass.getpass('API credential: ')
+    if not credential:
+        raise ValueError('An API credential is required')
+    async with AsyncOpenAI(api_key=credential, base_url=BASE_URL, timeout=180, max_retries=0) as client:
+        credential = None
+        recorder = Recorder(client, folder / 'model_handoff')
+        row = {
+            'condition': 'model_handoff', 'status': 'started',
+            'acceptance': None, 'grading_status': 'not_run',
+            'candidate_reused': False, 'new_trial': True,
+            'context': context, 'handoff_tokens': COUNTER.count_text(context),
+            'preparation': {'model_calls': 0, 'reported_tokens': 0, 'request_seconds': 0},
+            'reused_preparation': {
+                'source': relative(SELECTED_RUN / TASK_ID),
+                **{key: inputs['selection_report'].get(key) for key in (
+                    'model_calls', 'reported_tokens', 'request_seconds',
+                    'usage_reported_calls', 'usage_unavailable_calls',
+                )},
+            },
+        }
+        try:
+            continuation = await agent(
+                recorder, MODEL, RepositoryTools(target, writable=True),
+                receiver_prompt(context), CODER_STEPS, researcher=False,
+            )
+            patch = git(target, 'diff', '--no-ext-diff', 'HEAD', '--')
+            (folder / 'model_handoff.patch').write_text(patch, encoding='utf-8', newline='')
+            save(folder / 'model_handoff-continuation.json', continuation)
+            row.update(
+                status='candidate_generated' if patch else 'no_patch',
+                patch_file='model_handoff.patch',
+                patch_sha256=sha256(patch.encode('utf-8')),
+                continuation_finished=continuation['finished'],
+                continuation_steps_exhausted=continuation['steps_exhausted'],
+                executed_tool_steps=continuation['executed_tool_steps'],
+            )
+        except asyncio.CancelledError:
+            row.update(status='interrupted', error_type='CancelledError')
+            raise
+        except Exception as error:
+            row.update(status='failed_before_grading', error_type=type(error).__name__)
+            row['provider_status_code'] = getattr(error, 'status_code', None)
+        finally:
+            row.update(new_usage(recorder))
+            save(folder / 'model_handoff-report.json', row)
+            report['conditions'].append(row)
+            save(folder / 'report.json', report)
+            print(json.dumps({key: value for key, value in row.items() if key != 'context'}), flush=True)
+
+    checks = {
+        'source_checkout_unchanged': git(ORIGINAL_CHECKOUT, 'rev-parse', 'HEAD').strip() == BASE_COMMIT
+        and not git(ORIGINAL_CHECKOUT, 'status', '--porcelain'),
+        'input_files_unchanged': all(path.read_bytes() == inputs['files'][name] for name, path in inputs['paths'].items()),
+        'implementation_unchanged_during_run': all(sha256((ROOT / name).read_bytes()) == digest for name, digest in code_hashes.items()),
+        'baseline_patches_reused_verbatim': all(
+            (folder / f'{condition}.patch').read_bytes() == inputs['files'][f'{condition}_patch']
+            for condition in CONDITIONS[:2]
+        ),
+    }
+    report.update(checks)
+    report['source_unchanged'] = checks['source_checkout_unchanged'] and checks['input_files_unchanged']
+    report['status'] = 'completed_candidates' if all(checks.values()) else 'task_setup_failed'
+    save(folder / 'report.json', report)
+    save(OUTPUT / 'candidates.json', report['conditions'])
+    if not all(checks.values()):
+        raise RuntimeError('A frozen input, implementation or baseline changed during the corrective run')
+    save(OUTPUT / 'run-status.json', {
+        'status': 'completed', 'task_ids': [TASK_ID], 'new_distinct_tasks': 0,
+        'new_trials_by_condition': {'full_history': 0, 'receiver_aware_summary': 0, 'model_handoff': 1},
+        **checks, 'new_receiver_usage': new_usage(recorder),
+        'reused_preparation_usage': row['reused_preparation'],
+        'baseline_original_costs_recorded_in': 'reused_original_result in each baseline report',
+        'independent_upstream_grading_pending': True,
+    })
+    # The existing grader expects all three condition patch names. Marker last.
+    save(OUTPUT / 'predictions.json', {'task_ids': [TASK_ID], 'conditions': list(CONDITIONS)})
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--check-sources-only', action='store_true')
+    args = parser.parse_args()
+    asyncio.run(main(args.check_sources_only))

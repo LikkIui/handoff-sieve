@@ -1,0 +1,63 @@
+diff --git a/xarray/core/common.py b/xarray/core/common.py
+index 3c328f4..c442c4d 100644
+--- a/xarray/core/common.py
++++ b/xarray/core/common.py
+@@ -2023,14 +2023,16 @@ def get_chunksizes(
+ 
+     chunks: dict[Any, tuple[int, ...]] = {}
+     for v in variables:
+-        if hasattr(v.data, "chunks"):
+-            for dim, c in v.chunksizes.items():
+-                if dim in chunks and c != chunks[dim]:
+-                    raise ValueError(
+-                        f"Object has inconsistent chunks along dimension {dim}. "
+-                        "This can be fixed by calling unify_chunks()."
+-                    )
+-                chunks[dim] = c
++        # Use Variable.chunksizes directly.  In particular, do not access
++        # ``v.data`` here: backend arrays are commonly represented by lazy
++        # indexing wrappers whose ``data`` property materializes the array.
++        for dim, c in v.chunksizes.items():
++            if dim in chunks and c != chunks[dim]:
++                raise ValueError(
++                    f"Object has inconsistent chunks along dimension {dim}. "
++                    "This can be fixed by calling unify_chunks()."
++                )
++            chunks[dim] = c
+     return Frozen(chunks)
+ 
+ 
+diff --git a/xarray/core/variable.py b/xarray/core/variable.py
+index 2d115ff..f225b88 100644
+--- a/xarray/core/variable.py
++++ b/xarray/core/variable.py
+@@ -1008,6 +1008,10 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
+         Differs from variable.chunks because it returns a mapping of dimensions to chunk shapes
+         instead of a tuple of chunk shapes.
+ 
++        For lazily indexed backend arrays, chunk information is stored in the
++        encoding rather than on the array itself.  Reading it from the encoding
++        avoids accessing ``data`` (which may trigger an expensive read).
++
+         See Also
+         --------
+         Variable.chunk
+@@ -1015,9 +1019,16 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
+         xarray.unify_chunks
+         """
+         if hasattr(self._data, "chunks"):
+-            return Frozen({dim: c for dim, c in zip(self.dims, self.data.chunks)})
++            return Frozen({dim: c for dim, c in zip(self.dims, self._data.chunks)})
+         else:
+-            return {}
++            preferred_chunks = self.encoding.get("preferred_chunks", {})
++            return Frozen(
++                {
++                    dim: preferred_chunks[dim]
++                    for dim in self.dims
++                    if dim in preferred_chunks
++                }
++            )
+ 
+     _array_counter = itertools.count()
+ 

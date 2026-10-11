@@ -1,0 +1,296 @@
+"""One-call budget-hint selection retest on eleven already used dev states.
+
+No downstream receiver runs, task grading, source edits, automatic retries,
+or held-out tasks are involved. Run --check-sources-only for an offline check.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import getpass
+import hashlib
+import json
+import shutil
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+from openai import AsyncOpenAI
+
+from evals.public_swe.repository import git
+from evals.public_swe.run import Recorder, save
+from handoff_sieve import HandoffEnvelope, ReceiverContract, compile_model_handoff
+from handoff_sieve.adapters import OpenAIHandoffSelector
+
+ROOT = Path(__file__).resolve().parents[1]
+PILOT_SOURCE = ROOT / 'evals/public_swe/results/2026-10-11-development-native'
+XARRAY_SOURCE = ROOT / 'evals/public_swe/results/2026-10-11-development-remaining20'
+OUTPUT = ROOT / 'evals/public_swe/results/2026-10-11-budget-selection-v1'
+PILOT_TASKS = (
+    'sympy__sympy-18698',
+    'scikit-learn__scikit-learn-25931',
+    'pylint-dev__pylint-6528',
+    'mwaskom__seaborn-3069',
+    'psf__requests-2931',
+    'matplotlib__matplotlib-20859',
+    'django__django-14608',
+    'pytest-dev__pytest-10081',
+    'sphinx-doc__sphinx-7590',
+    'astropy__astropy-13398',
+)
+XARRAY_TASK = 'pydata__xarray-6721'
+TASKS = (*PILOT_TASKS, XARRAY_TASK)
+MODEL = 'gpt-5.6-sol'
+BASE_URL = 'https://ckffai.com/v1'
+CONCURRENCY = 3
+MAX_OUTPUT_TOKENS = 4096
+IMPLEMENTATION_FILES = (
+    'src/handoff_sieve/model_selection.py',
+    'src/handoff_sieve/adapters/openai_selector.py',
+    'src/handoff_sieve/compiler.py',
+    'src/handoff_sieve/tokens.py',
+)
+
+
+def sha256(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def source_for(task_id: str) -> Path:
+    if task_id in PILOT_TASKS:
+        return PILOT_SOURCE / task_id
+    if task_id == XARRAY_TASK:
+        return XARRAY_SOURCE / task_id
+    raise ValueError(f'Task is outside the fixed eleven-task retest: {task_id}')
+
+
+def load_sources() -> dict[str, dict[str, Any]]:
+    """Validate and freeze every input before creating output or opening a client."""
+    if len(TASKS) != 11 or len(set(TASKS)) != 11:
+        raise ValueError('The fixed retest must contain eleven distinct used tasks')
+    dataset_manifest = json.loads(
+        (ROOT / 'evals/public_swe/data/manifest.json').read_text(encoding='utf-8')
+    )
+    if tuple(dataset_manifest['pilot_ids']) != PILOT_TASKS:
+        raise ValueError('Frozen dataset pilot IDs differ from the fixed task list')
+    if not set(TASKS).issubset(dataset_manifest['splits']['development']):
+        raise ValueError('Retest list includes a nondevelopment task')
+
+    source_manifests = {}
+    for cohort in (PILOT_SOURCE, XARRAY_SOURCE):
+        manifest_path = cohort / 'run-manifest.json'
+        source_bytes = manifest_path.read_bytes()
+        source_manifests[cohort] = (json.loads(source_bytes), sha256(source_bytes))
+    if tuple(source_manifests[PILOT_SOURCE][0]['task_ids']) != PILOT_TASKS:
+        raise ValueError('Native pilot source manifest differs from the fixed list')
+    if XARRAY_TASK not in source_manifests[XARRAY_SOURCE][0]['task_ids']:
+        raise ValueError('Xarray is absent from its existing development run')
+
+    frozen = {}
+    for task_id in TASKS:
+        source = source_for(task_id)
+        sender_bytes = (source / 'sender.json').read_bytes()
+        contract_bytes = (source / 'contract.json').read_bytes()
+        state = HandoffEnvelope.model_validate_json(sender_bytes)
+        contract = ReceiverContract.model_validate_json(contract_bytes)
+        if contract.max_tokens != 4000:
+            raise ValueError(f'Unexpected original handoff budget for {task_id}')
+        frozen[task_id] = {
+            'source': source.relative_to(ROOT).as_posix(),
+            'source_run': source.parent.relative_to(ROOT).as_posix(),
+            'source_run_manifest_sha256': source_manifests[source.parent][1],
+            'sender_bytes': sender_bytes,
+            'contract_bytes': contract_bytes,
+            'sender_sha256': sha256(sender_bytes),
+            'contract_sha256': sha256(contract_bytes),
+            'state': state,
+            'contract': contract,
+            'state_snapshot': state.model_dump(mode='python'),
+            'contract_snapshot': contract.model_dump(mode='python'),
+        }
+    return frozen
+
+
+def provenance(task_id: str, frozen: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    source = frozen[task_id]
+    return {
+        'instance_id': task_id,
+        **{key: source[key] for key in (
+            'source', 'source_run', 'source_run_manifest_sha256',
+            'sender_sha256', 'contract_sha256',
+        )},
+        'new_distinct_task': False,
+    }
+
+
+def code_hashes() -> dict[str, str]:
+    return {name: sha256((ROOT / name).read_bytes()) for name in IMPLEMENTATION_FILES}
+
+
+def usage(recorder: Recorder) -> dict[str, Any]:
+    reported = [
+        row['response']['usage']
+        for row in recorder.records
+        if isinstance(row.get('response', {}).get('usage'), dict)
+        and isinstance(row['response']['usage'].get('total_tokens'), int)
+    ]
+    return {
+        'model_calls': len(recorder.records),
+        'completed_model_calls': sum(row.get('status') == 'completed' for row in recorder.records),
+        'usage_reported_calls': len(reported),
+        'usage_unavailable_calls': len(recorder.records) - len(reported),
+        'reported_tokens': sum(item['total_tokens'] for item in reported),
+        'request_seconds': round(sum(row.get('seconds', 0) for row in recorder.records), 3),
+    }
+
+
+async def main(check_sources_only: bool = False) -> None:
+    frozen = load_sources()
+    if check_sources_only:
+        print(json.dumps({
+            'status': 'all_fixed_sources_available',
+            'task_count': len(TASKS),
+            'task_sources': [provenance(task_id, frozen) for task_id in TASKS],
+            'new_distinct_tasks': 0,
+            'api_calls': 0,
+            'output_created': False,
+        }), flush=True)
+        return
+
+    hashes_before = code_hashes()
+    revision = git(ROOT, 'rev-parse', 'HEAD').strip()
+    dirty_implementation = git(ROOT, 'status', '--porcelain', '--', *IMPLEMENTATION_FILES).strip()
+    OUTPUT.mkdir(parents=True, exist_ok=False)
+    shutil.copyfile(__file__, OUTPUT / 'reproduce.py.txt')
+    save(OUTPUT / 'run-manifest.json', {
+        'kind': 'development budget-hint selector retest',
+        'task_ids': list(TASKS),
+        'task_sources': [provenance(task_id, frozen) for task_id in TASKS],
+        'new_distinct_tasks': 0,
+        'implementation_revision': revision,
+        'implementation_working_tree_changes': dirty_implementation,
+        'implementation_file_sha256': hashes_before,
+        'script_sha256': sha256(Path(__file__).read_bytes()),
+        'model': MODEL,
+        'model_alias_identity_verified': False,
+        'base_url': BASE_URL,
+        'concurrency': CONCURRENCY,
+        'max_output_tokens': MAX_OUTPUT_TOKENS,
+        'automatic_retries': 0,
+        'maximum_selector_calls_per_task': 1,
+        'maximum_model_calls': 11,
+        'sender_state_reused': True,
+        'original_contract_reused': True,
+        'source_fetching_performed': False,
+        'research_calls_performed': False,
+        'downstream_task_success_measured': False,
+        'grading_performed': False,
+        'usage_without_reported_usage_is_unknown': True,
+    })
+
+    credential = getpass.getpass('API credential: ')
+    if not credential:
+        raise ValueError('An API credential is required')
+    async with AsyncOpenAI(
+        api_key=credential, base_url=BASE_URL, timeout=180, max_retries=0,
+    ) as client:
+        credential = None
+        semaphore = asyncio.Semaphore(CONCURRENCY)
+
+        async def select(task_id: str) -> dict[str, Any]:
+            async with semaphore:
+                original = frozen[task_id]
+                folder = OUTPUT / task_id
+                folder.mkdir(exist_ok=False)
+                (folder / 'sender.json').write_bytes(original['sender_bytes'])
+                (folder / 'contract.json').write_bytes(original['contract_bytes'])
+                recorder = Recorder(client, folder / 'selector')
+                row = {
+                    **provenance(task_id, frozen),
+                    'downstream_task_success': None,
+                    'downstream_task_success_measured': False,
+                    'status': 'started',
+                }
+                try:
+                    result = await compile_model_handoff(
+                        original['state'], original['contract'],
+                        selector=OpenAIHandoffSelector(
+                            SimpleNamespace(responses=recorder),
+                            model=MODEL, max_output_tokens=MAX_OUTPUT_TOKENS,
+                        ),
+                    )
+                    save(folder / 'compilation.json', result.model_dump(mode='json'))
+                    row.update(
+                        status='valid_packet', packet_tokens=result.packet_tokens,
+                        selected_units=len(result.plan.selections),
+                        retained_source_units=len(result.selection.selected_source_ids),
+                    )
+                except asyncio.CancelledError:
+                    row.update(status='interrupted', error_type='CancelledError')
+                    raise
+                except Exception as error:
+                    row.update(
+                        status='selection_failed', error_type=type(error).__name__,
+                    )
+                    if type(error).__name__ in ('ContractError', 'BudgetExceededError'):
+                        row['error_message'] = str(error)
+                    else:
+                        row['provider_status_code'] = getattr(error, 'status_code', None)
+                finally:
+                    row.update(usage(recorder))
+                    row['source_unchanged'] = (
+                        original['state'].model_dump(mode='python')
+                        == original['state_snapshot']
+                    )
+                    row['contract_unchanged'] = (
+                        original['contract'].model_dump(mode='python')
+                        == original['contract_snapshot']
+                    )
+                    if recorder.records:
+                        payload = json.loads(recorder.records[0]['request']['input'])
+                        if 'budget' in payload:
+                            row['selector_budget'] = payload['budget']
+                    save(folder / 'report.json', row)
+                    print(json.dumps(row), flush=True)
+                if len(recorder.records) > 1:
+                    raise RuntimeError('The fixed retest made more than one selector call')
+                return row
+
+        rows = await asyncio.gather(*(select(task_id) for task_id in TASKS))
+
+    save(OUTPUT / 'results.json', rows)
+    source_files_unchanged = all(
+        (ROOT / original['source'] / 'sender.json').read_bytes() == original['sender_bytes']
+        and (ROOT / original['source'] / 'contract.json').read_bytes() == original['contract_bytes']
+        for original in frozen.values()
+    )
+    implementation_unchanged = hashes_before == code_hashes()
+    sender_states_unchanged = all(row['source_unchanged'] for row in rows)
+    contracts_unchanged = all(row['contract_unchanged'] for row in rows)
+    save(OUTPUT / 'run-status.json', {
+        'status': 'completed',
+        'task_count': len(rows),
+        'valid_packets': sum(row['status'] == 'valid_packet' for row in rows),
+        'new_distinct_tasks': 0,
+        'source_files_unchanged': source_files_unchanged,
+        'sender_states_unchanged': sender_states_unchanged,
+        'contracts_unchanged': contracts_unchanged,
+        'implementation_unchanged_during_run': implementation_unchanged,
+        'model_calls': sum(row['model_calls'] for row in rows),
+        'completed_model_calls': sum(row['completed_model_calls'] for row in rows),
+        'usage_reported_calls': sum(row['usage_reported_calls'] for row in rows),
+        'usage_unavailable_calls': sum(row['usage_unavailable_calls'] for row in rows),
+        'reported_tokens': sum(row['reported_tokens'] for row in rows),
+        'downstream_task_success_measured': False,
+    })
+    if not all((source_files_unchanged, implementation_unchanged,
+                sender_states_unchanged, contracts_unchanged)):
+        raise RuntimeError('Source files or selector implementation changed during retest')
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--check-sources-only', action='store_true')
+    args = parser.parse_args()
+    asyncio.run(main(args.check_sources_only))

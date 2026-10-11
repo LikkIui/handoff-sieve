@@ -1,0 +1,107 @@
+"""Local no-API comparison of old request preparation and budget-aware preparation."""
+
+from __future__ import annotations
+
+import json
+import statistics
+import time
+from pathlib import Path
+
+from handoff_sieve import HandoffEnvelope, ReceiverContract, SelectionRequest
+from handoff_sieve.adapters.openai_selector import _selector_payload
+from handoff_sieve.model_selection import _budgeted_request, source_units
+from handoff_sieve.pipeline import HandoffPipeline
+from handoff_sieve.tokens import ApproxTokenCounter
+
+
+class CountingCounter(ApproxTokenCounter):
+    def __init__(self):
+        self.calls = 0
+        self.counted_utf8_bytes = 0
+        self.goal_prefix = ""
+        self.goal_count_calls = 0
+
+    def count_text(self, text):
+        self.calls += 1
+        self.counted_utf8_bytes += len(text.encode("utf-8"))
+        if self.goal_prefix and self.goal_prefix in text:
+            self.goal_count_calls += 1
+        return super().count_text(text)
+
+
+frozen = Path("evals/public_swe/results/2026-10-11-development-remaining20")
+task = frozen / "pydata__xarray-6721"
+source = HandoffEnvelope.model_validate_json((task / "sender.json").read_text("utf-8"))
+contract = ReceiverContract.model_validate_json((task / "contract.json").read_text("utf-8"))
+large_source = source.model_copy(
+    update={
+        "messages": [entry.model_copy(deep=True) for _ in range(8) for entry in source.messages],
+        "artifacts": [entry.model_copy(deep=True) for _ in range(8) for entry in source.artifacts],
+    }
+)
+large_contract = contract.model_copy(update={"goal": contract.goal * 8, "max_tokens": 100000})
+
+
+def prepare(original, receiver, *, budgeted, counter):
+    pipeline = HandoffPipeline(token_counter=counter)
+    catalog = source_units(original, pipeline)
+    if budgeted:
+        request = _budgeted_request(original, catalog, receiver, pipeline)
+    else:
+        # The previous compiler built this request from a deep-copied catalog.
+        request = SelectionRequest(
+            receiver=original.receiver,
+            contract=receiver.model_copy(deep=True),
+            units=[entry.model_copy(deep=True) for entry in catalog],
+        )
+    wire, _ = _selector_payload(request)
+    return request, wire
+
+
+report = {
+    "purpose": "Local preparation overhead only; no model/API or downstream success claim",
+    "counter": "approx_utf8",
+    "baseline": "source_units + legacy SelectionRequest deep copies + compact selector payload",
+    "after": "source_units + budgeted request + compact selector payload",
+    "warmups": 3,
+    "timed_repeats": 12,
+    "fixtures": [],
+}
+for name, original, receiver in (
+    ("frozen_xarray_sender", source, contract),
+    ("synthetic_8x_xarray_catalog_and_goal", large_source, large_contract),
+):
+    entry = {
+        "fixture": name,
+        "messages": len(original.messages),
+        "goal_characters": len(receiver.goal),
+        "catalog_units": len(source_units(original, HandoffPipeline())),
+    }
+    for budgeted, label in ((False, "before"), (True, "after")):
+        for _ in range(3):
+            prepare(original, receiver, budgeted=budgeted, counter=ApproxTokenCounter())
+        milliseconds = []
+        for _ in range(12):
+            start = time.perf_counter()
+            prepare(original, receiver, budgeted=budgeted, counter=ApproxTokenCounter())
+            milliseconds.append((time.perf_counter() - start) * 1000)
+        counter = CountingCounter()
+        counter.goal_prefix = json.dumps(receiver.goal[:80], ensure_ascii=False)[1:-1]
+        request, wire = prepare(original, receiver, budgeted=budgeted, counter=counter)
+        entry[label] = {
+            "median_ms": round(statistics.median(milliseconds), 3),
+            "min_ms": round(min(milliseconds), 3),
+            "max_ms": round(max(milliseconds), 3),
+            "token_count_calls": counter.calls,
+            "counted_utf8_bytes": counter.counted_utf8_bytes,
+            "count_calls_with_goal_prefix": counter.goal_count_calls,
+            "selector_payload_utf8_bytes": len(wire.encode("utf-8")),
+            "fixed_packet_tokens": request.fixed_packet_tokens,
+            "source_budget_tokens": request.source_budget_tokens,
+        }
+    entry["added_median_ms"] = round(entry["after"]["median_ms"] - entry["before"]["median_ms"], 3)
+    report["fixtures"].append(entry)
+
+output = Path("work/model-budget-preparation-benchmark.json")
+output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+print(json.dumps(report, indent=2))
