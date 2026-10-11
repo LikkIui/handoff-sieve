@@ -1,0 +1,38 @@
+diff --git a/xarray/core/common.py b/xarray/core/common.py
+index 3c328f4..6259600 100644
+--- a/xarray/core/common.py
++++ b/xarray/core/common.py
+@@ -2023,14 +2023,25 @@ def get_chunksizes(
+ 
+     chunks: dict[Any, tuple[int, ...]] = {}
+     for v in variables:
+-        if hasattr(v.data, "chunks"):
+-            for dim, c in v.chunksizes.items():
+-                if dim in chunks and c != chunks[dim]:
+-                    raise ValueError(
+-                        f"Object has inconsistent chunks along dimension {dim}. "
+-                        "This can be fixed by calling unify_chunks()."
+-                    )
+-                chunks[dim] = c
++        # Inspect the underlying array directly: Variable.data may materialize
++        # backend arrays that are not recognized as duck arrays.
++        data_chunks = getattr(v._data, "chunks", None)
++        if data_chunks is not None:
++            variable_chunks = dict(zip(v.dims, data_chunks))
++        else:
++            preferred_chunks = v.encoding.get("preferred_chunks")
++            if preferred_chunks is None:
++                continue
++            variable_chunks = {
++                dim: (size,) for dim, size in preferred_chunks.items()
++            }
++        for dim, c in variable_chunks.items():
++            if dim in chunks and c != chunks[dim]:
++                raise ValueError(
++                    f"Object has inconsistent chunks along dimension {dim}. "
++                    "This can be fixed by calling unify_chunks()."
++                )
++            chunks[dim] = c
+     return Frozen(chunks)
+ 
+ 

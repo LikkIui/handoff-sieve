@@ -1,0 +1,27 @@
+diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py
+index 1b3285d..d8d9de2 100644
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -64,7 +64,7 @@ class Card(_Verify):
+ 
+     # Used in cards using the CONTINUE convention which expect a string
+     # followed by an optional comment
+-    _strg = r"\'(?P<strg>([ -~]+?|\'\'|) *?)\'(?=$|/| )"
++    _strg = r"\'(?P<strg>(?:[ -!#-~]|\'\')*?)\'(?=$|/| )"
+     _comm_field = r"(?P<comm_field>(?P<sepr>/ *)(?P<comm>(.|\n)*))"
+     _strg_comment_RE = re.compile(f"({_strg})? *{_comm_field}?")
+ 
+@@ -1059,6 +1059,13 @@ class Card(_Verify):
+         # do the value string
+         value = self._value.replace("'", "''")
+         words = _words_group(value, value_length)
++        # Keep escaped quotes together when splitting across CONTINUE cards.
++        # Otherwise the parser cannot distinguish them from delimiters.
++        for idx in range(len(words) - 1):
++            if words[idx].count("'") % 2:
++                words[idx] += words[idx + 1][0]
++                words[idx + 1] = words[idx + 1][1:]
++
+         for idx, word in enumerate(words):
+             if idx == 0:
+                 headstr = "{:{len}}= ".format(self.keyword, len=KEYWORD_LENGTH)
