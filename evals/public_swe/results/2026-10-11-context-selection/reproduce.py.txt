@@ -1,0 +1,71 @@
+import asyncio
+import getpass
+import hashlib
+import json
+import shutil
+from pathlib import Path
+from types import SimpleNamespace
+
+from openai import AsyncOpenAI
+
+from evals.public_swe.repository import git
+from evals.public_swe.run import Recorder, save
+from handoff_sieve import HandoffEnvelope, ReceiverContract, compile_model_handoff
+from handoff_sieve.adapters import OpenAIHandoffSelector
+
+SOURCE = Path('evals/public_swe/results/2026-10-11-development-native')
+OUTPUT = Path('evals/public_swe/results/2026-10-11-context-selection')
+
+
+async def main():
+    manifest = json.loads((SOURCE / 'run-manifest.json').read_text(encoding='utf-8'))
+    OUTPUT.mkdir(parents=True, exist_ok=False)
+    shutil.copyfile(__file__, OUTPUT / 'reproduce.py.txt')
+    save(OUTPUT / 'run-manifest.json', {
+        'kind': 'development coherent-source selector retest',
+        'source_run': SOURCE.as_posix(),
+        'task_ids': manifest['task_ids'],
+        'new_distinct_tasks': 0,
+        'implementation_revision': git(Path.cwd(), 'rev-parse', 'HEAD').strip(),
+        'script_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        'model': manifest['model'],
+        'automatic_retries': 0,
+        'downstream_task_success_measured': False,
+    })
+    key = getpass.getpass('API credential: ')
+    async with AsyncOpenAI(api_key=key, base_url='https://ckffai.com/v1', timeout=180, max_retries=0) as client:
+        key = None
+        semaphore = asyncio.Semaphore(3)
+
+        async def select(task_id):
+            original = SOURCE / task_id
+            for _ in range(90):
+                if (original / 'contract.json').exists():
+                    break
+                await asyncio.sleep(20)
+            async with semaphore:
+                folder = OUTPUT / task_id
+                folder.mkdir()
+                state = HandoffEnvelope.model_validate_json((original / 'sender.json').read_text(encoding='utf-8'))
+                contract = ReceiverContract.model_validate_json((original / 'contract.json').read_text(encoding='utf-8'))
+                recorder = Recorder(client, folder / 'selector')
+                row = {'instance_id': task_id, 'downstream_task_success': None}
+                try:
+                    result = await compile_model_handoff(state, contract, selector=OpenAIHandoffSelector(SimpleNamespace(responses=recorder), model=manifest['model']))
+                    save(folder / 'compilation.json', result.model_dump(mode='json'))
+                    row.update(status='valid_packet', packet_tokens=result.packet_tokens, selected_units=len(result.plan.selections))
+                except Exception as error:
+                    row.update(status='selection_failed', error_type=type(error).__name__)
+                    if type(error).__name__ in ('ContractError', 'BudgetExceededError'):
+                        row['error_message'] = str(error)
+                row.update(recorder.usage())
+                save(folder / 'report.json', row)
+                print(json.dumps(row), flush=True)
+                return row
+
+        rows = await asyncio.gather(*(select(task_id) for task_id in manifest['task_ids']))
+    save(OUTPUT / 'results.json', rows)
+
+
+asyncio.run(main())
+

@@ -188,6 +188,20 @@ def test_native_agent_returns_real_tool_error_before_next_call(
         {"operation": "finish", "path": "", "old": "", "new": ""},
     ]
     requests = []
+    prior = [
+        {
+            "type": "function_call",
+            "name": "source_operation",
+            "call_id": "previous-finish",
+            "arguments": "{}",
+        },
+        {
+            "type": "function_call_output",
+            "call_id": "previous-finish",
+            "output": "Finish acknowledged; visible testing was pending.",
+        },
+    ]
+    prior_snapshot = json.loads(json.dumps(prior))
 
     class FakeRecorder:
         async def create(self, **kwargs: Any) -> Any:
@@ -209,12 +223,45 @@ def test_native_agent_returns_real_tool_error_before_next_call(
             return {"model_calls": len(requests)}
 
     result = asyncio.run(
-        agent(FakeRecorder(), "unit-fixture", tool, "fix", 2, researcher=False)
+        agent(
+            FakeRecorder(),
+            "unit-fixture",
+            tool,
+            "Visible test failed; repair the current patch.",
+            2,
+            researcher=False,
+            initial_history=prior,
+        )
     )  # type: ignore[arg-type]
     assert requests[0]["parallel_tool_calls"] is False
+    assert requests[0]["input"][:2] == prior_snapshot
+    assert requests[0]["input"][2]["role"] == "user"
+    assert prior == prior_snapshot
     output = requests[1]["input"][-1]
     assert output["type"] == "function_call_output"
     assert output["call_id"] == "call-1"
     assert "Old text must match exactly once" in output["output"]
     assert (tmp_path / "mod.py").read_text() == "value = 1\n"
     assert result["executed_tool_steps"] == 1
+
+
+@pytest.mark.parametrize(
+    "condition", ["full_history", "receiver_aware_summary", "model_handoff"]
+)
+def test_receiver_goal_has_one_common_context_boundary(condition: str) -> None:
+    import json
+
+    from evals.public_swe.run import goal_context, receiver_prompt
+
+    goal = "Fix the public issue without changing the API"
+    values = {
+        "full_history": json.dumps({"messages": ["Observed implementation"]}),
+        "receiver_aware_summary": "Observed implementation",
+        "model_handoff": json.dumps({"goal": goal, "evidence": []}),
+    }
+    context = goal_context(condition, values[condition], goal)
+    prompt = receiver_prompt(context)
+    assert prompt.count(goal) == 1
+    assert json.loads(context)["goal"] == goal
+    if condition == "model_handoff":
+        assert context == values[condition]

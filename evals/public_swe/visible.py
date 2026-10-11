@@ -223,6 +223,7 @@ def run_condition(
     report: dict[str, Any] = {
         "patch_path": candidate.path,
         "patch_sha256": hashlib.sha256(candidate.patch).hexdigest(),
+        "expected_base_commit": task.base_commit,
         "base_commit_verified": False,
         "patch_applied": False,
     }
@@ -236,8 +237,19 @@ def run_condition(
             detach=True,
             network_disabled=True,
         )
-        if _check(container, ["git", "rev-parse", "HEAD"]) != task.base_commit:
-            raise ValueError("Image source revision differs from the public task")
+        report["image_initial_head"] = _check(container, ["git", "rev-parse", "HEAD"])
+        # Official images provide the installed environment, but their starting
+        # checkout can differ. Restore only the public source revision inside
+        # this new, unmounted container; never use evaluator scripts or patches.
+        _check(container, ["git", "cat-file", "-e", task.base_commit + "^{commit}"])
+        _check(container, ["git", "reset", "--hard", task.base_commit])
+        _check(container, ["git", "clean", "-fd"])
+        report["prepared_head"] = _check(container, ["git", "rev-parse", "HEAD"])
+        if report["prepared_head"] != task.base_commit:
+            raise ValueError(
+                f"Prepared source revision differs: expected {task.base_commit}, "
+                f"actual {report['prepared_head']}"
+            )
         if _check(container, ["git", "status", "--porcelain"]):
             raise ValueError("Image source checkout is not clean")
         report["base_commit_verified"] = True

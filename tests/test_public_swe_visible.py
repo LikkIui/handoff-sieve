@@ -115,6 +115,7 @@ class FakeContainer:
     def __init__(self) -> None:
         self.removed = False
         self.patch = b""
+        self.head = BASE
 
     def remove(self, *, force: bool) -> None:
         assert force
@@ -159,7 +160,10 @@ def fake_execute(
     container: FakeContainer, command: list[str], timeout: int
 ) -> dict[str, Any]:
     if command == ["git", "rev-parse", "HEAD"]:
-        return output(BASE + "\n")
+        return output(container.head + "\n")
+    if command == ["git", "reset", "--hard", BASE]:
+        container.head = BASE
+        return output()
     if command == ["git", "rev-parse", "HEAD:tests/test_self.py"]:
         return output("b" * 40 + "\n")
     if command[0] == "/bin/bash":
@@ -194,7 +198,9 @@ def test_candidate_failure_is_feedback_with_a_valid_unchanged_control(
     assert all(container.removed for container in docker.created)
 
 
-@pytest.mark.parametrize("problem", ["wrong_base", "modified_tests", "patch_failure"])
+@pytest.mark.parametrize(
+    "problem", ["wrong_base", "missing_base", "modified_tests", "patch_failure"]
+)
 def test_unverified_sources_never_run_visible_tests(
     monkeypatch: pytest.MonkeyPatch,
     problem: str,
@@ -207,6 +213,8 @@ def test_unverified_sources_never_run_visible_tests(
         commands.append(command)
         if problem == "wrong_base" and command == ["git", "rev-parse", "HEAD"]:
             return output("c" * 40)
+        if problem == "missing_base" and command[:3] == ["git", "cat-file", "-e"]:
+            return output("Public base object is missing", exit_code=1)
         if problem == "modified_tests" and command[:3] == [
             "git",
             "diff",
@@ -224,6 +232,46 @@ def test_unverified_sources_never_run_visible_tests(
     assert report["status"] == "environment_error"
     assert not any(command[0] == "/bin/bash" for command in commands)
     assert docker.created[0].removed
+    if problem == "wrong_base":
+        assert report["image_initial_head"] == "c" * 40
+        assert report["prepared_head"] == "c" * 40
+        assert f"expected {BASE}" in report["error_message"]
+    if problem == "missing_base":
+        assert not any(command[:2] == ["git", "reset"] for command in commands)
+
+
+def test_different_image_head_is_reset_before_candidate_and_original_tests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands = []
+    docker = client()
+    original_create = docker.containers.run
+
+    def create(*args: Any, **kwargs: Any) -> FakeContainer:
+        container = original_create(*args, **kwargs)
+        container.head = "c" * 40
+        return container
+
+    def execute(
+        container: FakeContainer, command: list[str], timeout: int
+    ) -> dict[str, Any]:
+        commands.append(command)
+        return fake_execute(container, command, timeout)
+
+    docker.containers.run = create
+    monkeypatch.setattr(visible, "_execute", execute)
+    monkeypatch.setattr(visible, "_copy_patch", set_patch)
+    report = visible.run_condition(task(), task().candidates[0], docker, timeout=300)
+    assert report["status"] == "tested"
+    assert report["image_initial_head"] == "c" * 40
+    assert report["prepared_head"] == BASE
+    assert report["base_commit_verified"] is True
+    assert report["patch_applied"] is True
+    assert (
+        commands.index(["git", "reset", "--hard", BASE])
+        < commands.index(["git", "clean", "-fd"])
+        < commands.index(["git", "apply", "--check", "/tmp/handoff-candidate.patch"])
+    )
 
 
 def test_environment_timeout_does_not_become_a_passing_baseline(

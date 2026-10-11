@@ -48,6 +48,8 @@ extra. No compression model, GPU, vector database, or extra service is needed.
    source lines use contiguous windows of at most 40 lines. Selecting a window
    also keeps its observed file header and enclosing blocks. This preserves
    available context; it never fetches or invents an unobserved declaration.
+   Enclosure recognition is a best-effort indentation heuristic for single-line
+   headers, not dependency analysis; multiline declarations may be missed.
    Host-only character offsets and indices are retained locally but omitted
    from the selector payload; nonempty task hints and metadata remain visible.
    The OpenAI payload shares repeated message metadata across its units.

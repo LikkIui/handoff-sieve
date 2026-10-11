@@ -120,15 +120,20 @@ async def agent(
     steps: int,
     *,
     researcher: bool,
+    initial_history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    history: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
+    history: list[dict[str, Any]] = json.loads(json.dumps(initial_history or []))
+    history.append({"role": "user", "content": prompt})
     events: list[dict[str, str]] = []
     finished = False
     used_steps = 0
     for _ in range(steps + 1):
         budget_exhausted = used_steps >= steps
         instructions = TOOL_INSTRUCTIONS + (
-            "\nResearch only; identify relevant code, caveats and work for the coder."
+            "\nResearch only; identify relevant code, caveats and work for the coder. "
+            "Read relevant implementations and observed callers or initialization "
+            "before finishing. Separate observations from unverified hypotheses; "
+            "report missing evidence and original repository tests worth checking."
             if researcher
             else "\nImplement the issue in the current checkout."
         )
@@ -207,6 +212,30 @@ async def agent(
         "executed_tool_steps": used_steps,
         **recorder.usage(),
     }
+
+
+def goal_context(condition: str, context: str, goal: str) -> str:
+    """All conditions carry the task goal within the handoff boundary once."""
+    if condition == "model_handoff":
+        if json.loads(context).get("goal") != goal:
+            raise ValueError("Packet goal differs from the receiver contract")
+        return context
+    if condition == "full_history":
+        value = {"goal": goal, "sender_state": json.loads(context)}
+    elif condition == "receiver_aware_summary":
+        value = {"goal": goal, "summary": context}
+    else:
+        raise ValueError("Unknown takeover condition")
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def receiver_prompt(context: str) -> str:
+    return (
+        "Implement the task goal in the handoff context using the current "
+        "source checkout.\n\n<handoff_context>\n"
+        + context
+        + "\n</handoff_context>"
+    )
 
 
 async def run_task(
@@ -354,15 +383,12 @@ async def run_task(
                             compilation.model_dump(mode="json"),
                         )
                     preparation = calls.usage()
+                    context = goal_context(condition, context, contract.goal)
                     continuation = await agent(
                         calls,
                         args.model,
                         RepositoryTools(target, writable=True),
-                        "Fix the issue using the current source checkout.\n"
-                        + task["problem_statement"]
-                        + "\n\n<handoff_context>\n"
-                        + context
-                        + "\n</handoff_context>",
+                        receiver_prompt(context),
                         args.coder_steps,
                         researcher=False,
                     )
@@ -443,6 +469,9 @@ async def run(args: argparse.Namespace) -> None:
         "automatic_retries": 0,
         "agent_protocol": "sequential native Responses function calls",
         "selector_protocol": "bounded catalog indices with per-selection needs",
+        "source_catalog": "observed numbered code windows with pinned context",
+        "receiver_boundary": "task goal carried in each condition context; "
+        "common prompt does not duplicate the issue",
         "implementation_revision": git(Path.cwd(), "rev-parse", "HEAD").strip(),
         "split": "development",
         "success_results": "pending upstream grading",
@@ -498,8 +527,8 @@ def main() -> None:
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--tasks", nargs="+")
     parser.add_argument("--concurrency", type=int, default=3)
-    parser.add_argument("--research-steps", type=int, default=3)
-    parser.add_argument("--coder-steps", type=int, default=8)
+    parser.add_argument("--research-steps", type=int, default=8)
+    parser.add_argument("--coder-steps", type=int, default=24)
     parser.add_argument("--handoff-tokens", type=int, default=4000)
     parser.add_argument("--git-proxy")
     parser.add_argument("--source-cache", type=Path)
