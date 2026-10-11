@@ -1,0 +1,46 @@
+diff --git a/sklearn/ensemble/_iforest.py b/sklearn/ensemble/_iforest.py
+index 4d6c1c3..b1cadf5 100644
+--- a/sklearn/ensemble/_iforest.py
++++ b/sklearn/ensemble/_iforest.py
+@@ -345,7 +345,7 @@ class IsolationForest(OutlierMixin, BaseBagging):
+             return self
+ 
+         # else, define offset_ wrt contamination parameter
+-        self.offset_ = np.percentile(self.score_samples(X), 100.0 * self.contamination)
++        self.offset_ = np.percentile(self._score_samples(X), 100.0 * self.contamination)
+ 
+         return self
+ 
+@@ -437,6 +437,10 @@ class IsolationForest(OutlierMixin, BaseBagging):
+ 
+         # Take the opposite of the scores as bigger is better (here less
+         # abnormal)
++        return self._score_samples(X)
++
++    def _score_samples(self, X):
++        """Private version of score_samples without input validation."""
+         return -self._compute_chunked_score_samples(X)
+ 
+     def _compute_chunked_score_samples(self, X):
+diff --git a/sklearn/ensemble/tests/test_iforest.py b/sklearn/ensemble/tests/test_iforest.py
+index 5f04654..59f7e4e 100644
+--- a/sklearn/ensemble/tests/test_iforest.py
++++ b/sklearn/ensemble/tests/test_iforest.py
+@@ -234,6 +234,17 @@ def test_score_samples():
+     )
+ 
+ 
++
++
++def test_iforest_dataframe_no_feature_names_warning():
++    pd = pytest.importorskip("pandas")
++    X = pd.DataFrame({"a": [-1.1, 0.3, 0.5, 100]})
++
++    with warnings.catch_warnings():
++        warnings.simplefilter("error", UserWarning)
++        IsolationForest(contamination=0.05, random_state=0).fit(X)
++
++
+ def test_iforest_warm_start():
+     """Test iterative addition of iTrees to an iForest"""
+ 

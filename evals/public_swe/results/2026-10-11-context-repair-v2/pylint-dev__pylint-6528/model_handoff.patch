@@ -1,0 +1,63 @@
+diff --git a/pylint/lint/pylinter.py b/pylint/lint/pylinter.py
+index 53345a6..aac00aa 100644
+--- a/pylint/lint/pylinter.py
++++ b/pylint/lint/pylinter.py
+@@ -564,21 +564,45 @@ class PyLinter(
+             if not msg.may_be_emitted():
+                 self._msgs_state[msg.msgid] = False
+ 
+-    @staticmethod
+-    def _discover_files(files_or_modules: Sequence[str]) -> Iterator[str]:
+-        """Discover python modules and packages in sub-directory.
++    def _discover_files(self, files_or_modules: Sequence[str]) -> Iterator[str]:
++        """Discover Python modules and packages in sub-directories.
+ 
+-        Returns iterator of paths to discovered modules and packages.
++        Apply the same ignore options used when expanding an explicitly supplied
++        package.  In particular, pruning ignored directories here is important:
++        otherwise recursive discovery bypasses ``expand_modules``'s ignore
++        handling by supplying each discovered file as an explicit argument.
+         """
++
++        def is_ignored(path: str) -> bool:
++            path = os.path.normpath(path)
++            basename = os.path.basename(path)
++            return (
++                basename in self.config.ignore
++                or any(
++                    pattern.match(basename) for pattern in self.config.ignore_patterns
++                )
++                or any(pattern.match(path) for pattern in self.config.ignore_paths)
++            )
++
+         for something in files_or_modules:
+             if os.path.isdir(something) and not os.path.isfile(
+                 os.path.join(something, "__init__.py")
+             ):
+                 skip_subtrees: list[str] = []
+-                for root, _, files in os.walk(something):
++                for root, dirs, files in os.walk(something):
++                    # os.walk is top-down, so remove ignored directories before
++                    # it descends into them.
++                    dirs[:] = [
++                        directory
++                        for directory in dirs
++                        if not is_ignored(os.path.join(root, directory))
++                    ]
+                     if any(root.startswith(s) for s in skip_subtrees):
+                         # Skip subtree of already discovered package.
+                         continue
++                    if is_ignored(root):
++                        dirs[:] = []
++                        continue
+                     if "__init__.py" in files:
+                         skip_subtrees.append(root)
+                         yield root
+@@ -587,6 +611,7 @@ class PyLinter(
+                             os.path.join(root, file)
+                             for file in files
+                             if file.endswith(".py")
++                            and not is_ignored(os.path.join(root, file))
+                         )
+             else:
+                 yield something

@@ -1,0 +1,141 @@
+"""Continue saved native agents using only their own original-test feedback."""
+import asyncio
+import getpass
+import hashlib
+import json
+import shutil
+from pathlib import Path
+
+from openai import AsyncOpenAI
+from openai.types.responses import Response
+
+from evals.public_swe.repository import RepositoryTools, fork_source, git
+from evals.public_swe.run import CONDITIONS, Recorder, agent, save
+
+SOURCE = Path('evals/public_swe/results/2026-10-11-context-takeover')
+FEEDBACK = SOURCE / 'visible/pylint-dev__pylint-6528.json'
+OUTPUT = Path('evals/public_swe/results/2026-10-11-context-repair-v2')
+WORK = Path('work/public-swe-context-repair-v2')
+TASK_ID = 'pylint-dev__pylint-6528'
+
+
+def native_history(condition):
+    calls = sorted((SOURCE / TASK_ID / condition).glob('call-*.json'))
+    last = json.loads(calls[-1].read_text(encoding='utf-8'))
+    response = last['response']
+    native_calls = [o for o in response['output'] if o['type'] == 'function_call']
+    if response['status'] != 'completed' or len(native_calls) != 1:
+        raise ValueError('Only a completed native candidate can be continued')
+    call = native_calls[0]
+    if call['name'] != 'source_operation' or json.loads(call['arguments'])['operation'] != 'finish':
+        raise ValueError('Previous agent did not finish; do not silently restart it')
+    continuation = json.loads((SOURCE / TASK_ID / f'{condition}-continuation.json').read_text(encoding='utf-8'))
+    if not continuation['finished'] or not continuation['events'][-1]['content'].startswith('Executed finish '):
+        raise ValueError('The actual finish tool result is missing')
+    # Match the live agent's SDK serialization, which excludes nullable wire
+    # fields. Replaying the stored diagnostic response verbatim is invalid.
+    items = [o.model_dump(mode='json', exclude_none=True) for o in Response.model_validate(response).output]
+    history = last['request']['input'] + items
+    history.append({'type': 'function_call_output', 'call_id': call['call_id'],
+                    'output': continuation['events'][-1]['content']})
+    return history
+
+
+async def main():
+    feedback = json.loads(FEEDBACK.read_text(encoding='utf-8'))
+    if not feedback['baseline_valid'] or feedback['instance_id'] != TASK_ID:
+        raise ValueError('Visible original-test baseline is invalid')
+    tasks = {t['instance_id']: t for t in map(json.loads, Path('evals/public_swe/data/development.jsonl').read_text(encoding='utf-8').splitlines())}
+    task = tasks[TASK_ID]
+    if feedback['base_commit'] != task['base_commit']:
+        raise ValueError('Feedback is for another source revision')
+    for condition in CONDITIONS:
+        patch = (SOURCE / TASK_ID / f'{condition}.patch').read_bytes()
+        observed = feedback['outcomes'][condition]
+        if observed['patch_sha256'] != hashlib.sha256(patch).hexdigest() or observed['status'] != 'tested' or observed['test']['timed_out']:
+            raise ValueError('Feedback must match each exact candidate and completed test')
+    OUTPUT.mkdir(parents=True, exist_ok=False)
+    shutil.copyfile(__file__, OUTPUT / 'reproduce.py.txt')
+    manifest = json.loads((SOURCE / 'run-manifest.json').read_text(encoding='utf-8'))
+    save(OUTPUT / 'run-manifest.json', {
+        **manifest,
+        'kind': 'development one-round original-test correction',
+        'source_run': SOURCE.as_posix(),
+        'implementation_revision': git(Path.cwd(), 'rev-parse', 'HEAD').strip(),
+        'feedback_file': FEEDBACK.as_posix(),
+        'feedback_sha256': hashlib.sha256(FEEDBACK.read_bytes()).hexdigest(),
+        'feedback_scope': 'Original repository tests only; no hidden grader data',
+        'new_distinct_tasks': 0,
+        'additional_coder_steps': 12,
+        'correction_task_ids': [TASK_ID],
+        'other_task_candidates': 'Unchanged sklearn candidates reused from source run',
+        'success_results': 'pending independent upstream grading',
+        'prior_protocol_attempt': '2026-10-11-context-repair: three HTTP 400 requests, no model outputs or reported usage; raw nullable output replay fixed',
+    })
+    # The other task receives no repair and remains identical in this cohort.
+    for task_id in manifest['task_ids']:
+        if task_id == TASK_ID:
+            continue
+        destination = OUTPUT / task_id
+        destination.mkdir()
+        for condition in CONDITIONS:
+            shutil.copyfile(SOURCE / task_id / f'{condition}.patch', destination / f'{condition}.patch')
+    key = getpass.getpass('API credential: ')
+    async with AsyncOpenAI(api_key=key, base_url='https://ckffai.com/v1', timeout=180, max_retries=0) as client:
+        key = None
+
+        async def repair(condition):
+            original = Path('work/public-swe-development-native') / TASK_ID / 'source'
+            if git(original, 'rev-parse', 'HEAD').strip() != task['base_commit'] or git(original, 'status', '--porcelain'):
+                raise ValueError('Original public source is no longer clean and frozen')
+            target = WORK / TASK_ID / condition
+            target.parent.mkdir(parents=True, exist_ok=True)
+            await asyncio.to_thread(fork_source, original, target)
+            initial_patch = (SOURCE / TASK_ID / f'{condition}.patch').resolve()
+            if initial_patch.stat().st_size:
+                await asyncio.to_thread(git, target, 'apply', str(initial_patch))
+            folder = OUTPUT / TASK_ID
+            folder.mkdir(exist_ok=True)
+            calls = Recorder(client, folder / condition)
+            own = feedback['outcomes'][condition]
+            visible = {
+                'command': feedback['command'],
+                'unchanged_source_exit_code': feedback['outcomes']['unchanged_source']['test']['exit_code'],
+                'candidate_test': own['test'],
+                'scope': feedback['feedback_scope'],
+            }
+            prompt = (
+                'Your submitted patch is applied in the current checkout. '
+                'The original repository visible tests have now run. Review your '
+                'own result below and repair any observed regression; if they pass '
+                'and no further change is needed, finish. You have one correction '
+                'round with 12 source operations. No hidden acceptance results '
+                'are available. Do not claim these public checks prove the issue '
+                'is resolved.\n<visible_test_feedback>\n'
+                + json.dumps(visible, ensure_ascii=False)
+                + '\n</visible_test_feedback>'
+            )
+            row = {'instance_id': TASK_ID, 'condition': condition,
+                   'grading_status': 'not_run', 'acceptance': None,
+                   'initial_patch_sha256': own['patch_sha256']}
+            try:
+                continuation = await agent(calls, 'gpt-5.6-sol', RepositoryTools(target, writable=True), prompt, 12, researcher=False, initial_history=native_history(condition))
+                patch = git(target, 'diff', '--no-ext-diff', 'HEAD', '--')
+                (folder / f'{condition}.patch').write_text(patch, encoding='utf-8', newline='')
+                save(folder / f'{condition}-continuation.json', continuation)
+                row.update(status='candidate_generated' if patch else 'no_patch',
+                           final_patch_sha256=hashlib.sha256(patch.encode()).hexdigest(),
+                           executed_tool_steps=continuation['executed_tool_steps'])
+            except Exception as error:
+                row.update(status='failed_before_grading', error_type=type(error).__name__)
+            row.update(calls.usage())
+            save(folder / f'{condition}-report.json', row)
+            print(json.dumps(row), flush=True)
+            return row
+
+        rows = await asyncio.gather(*(repair(c) for c in CONDITIONS))
+    save(OUTPUT / 'corrections.json', rows)
+    save(OUTPUT / 'predictions.json', {'task_ids': manifest['task_ids'], 'conditions': list(CONDITIONS)})
+
+
+asyncio.run(main())
