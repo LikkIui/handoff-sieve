@@ -14,6 +14,8 @@ All ten requests produced a locally valid packet within the original estimated
 4,000-token limit, without an automatic retry. This measures reference/coverage
 validation and budgeting, **not downstream task success**. It adds zero new
 distinct tasks and is not an independent benchmark trial of the earlier code.
+These ten calls reported 154,872 provider tokens; the mean rendered packet
+estimate was 1,118 tokens. Smaller packets do not establish task sufficiency.
 
 See `run-manifest.json` for the exact implementation revision and
 `reproduce.py.txt` for the executed diagnostic. Each task retains the API request,

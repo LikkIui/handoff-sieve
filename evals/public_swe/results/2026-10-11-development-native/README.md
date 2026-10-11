@@ -11,6 +11,37 @@ and edit existing files; they cannot execute local tests. All three conditions
 use the same issue, frozen source/research state, model and coder tool budget.
 Source snapshots remained unchanged. Candidate generation is not success.
 
+## Upstream acceptance results
+
+| Condition | Resolved original issues | Mean handoff estimate | Preparation + continuation provider tokens |
+|---|---:|---:|---:|
+| Full History | 2/10 | 4,264 | 830,859 |
+| Strong receiver-aware summary | 1/10 | 835 | 617,072 |
+| HandoffSieve model selection | 0/10 | 1,028, for 8 valid packets | 592,334 |
+
+All ten reference-fix controls passed and all ten unchanged-source controls
+failed. Every generated candidate patch applied successfully; there were zero
+upstream execution errors. Missing patches and the two rejected selection plans
+remain failures in the ten-task denominator. The handoff mean excludes the two
+unrendered packets, not their failures or provider usage.
+
+There were **307 real API requests / 2,172,523 reported provider tokens**,
+including shared research: 40 requests / 132,258 tokens. Shared research is
+excluded from the condition totals above. Every saved response reported usage.
+The common issue prompt sits outside the handoff estimate; HandoffPacket also
+carries its goal. Total provider usage includes the actual full requests.
+
+This run does **not** establish minimal sufficient handoff: both compressed
+conditions frequently reached the eight-action limit without editing, and the
+full-history baseline itself solved only two issues. The subsequent two-task
+24-action diagnostic improved execution but still did not match full history.
+The implementation should be improved on development tasks before using the
+200-task held-out set for a formal comparison.
+
+See [`summary.json`](summary.json), [`upstream/workflow.json`](upstream/workflow.json)
+and the [actual grading workflow](https://github.com/LikkIui/handoff-sieve/actions/runs/38073402472).
+The aggregation script is retained as `summarize.py.txt`.
+
 The executed version is recorded in `provenance.json`. Subsequent selector
 changes do not retroactively change these results. Two model-selection plans
 failed local validation; those failures remain in the denominator. Separate
@@ -20,8 +51,8 @@ The initial coder record's `steps_exhausted` field incorrectly reported false
 after the budget-forced finish. Use `executed_tool_steps >= 8` to identify a
 continuation that reached the limit; no raw records have been rewritten.
 
-The upstream Linux workflow grades reference-fix and unchanged-source controls
-before the generated patches. Its reports will be retained under `upstream/`.
+The upstream Linux workflow graded reference-fix and unchanged-source controls
+before the generated patches. Its reports are retained under `upstream/`.
 Task success is determined by upstream FAIL_TO_PASS and PASS_TO_PASS tests,
 not by a model's finish note. Empty patches and selection failures remain
 failures; infrastructure errors are reported separately.

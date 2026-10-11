@@ -91,3 +91,16 @@ fix or grading output is fed back into a model run.
 The 200-task, three-trial formal comparison is **planned, not completed**.
 Development failures may guide changes; held-out tasks must remain unused until
 the implementation and experiment settings are frozen.
+
+## Completed development evidence
+
+- [Initial ten-task sequential run](results/2026-10-11-development-native/README.md):
+  full history 2/10, strong summary 1/10, selected packet 0/10; all controls valid.
+- [Indexed-selector retest](results/2026-10-11-selection-retest/README.md):
+  ten locally valid packets on the same frozen states; no downstream claim.
+- [Two-task larger-budget retest](results/2026-10-11-takeover-retest/README.md):
+  2/2, 1/2, 1/2 respectively; same tasks, disclosed changes and reused preparation.
+
+The next step is better observed dependency context and reliable visible-test
+feedback on development tasks. The constrained source-only baseline is not yet
+strong enough for a meaningful formal comparison. No new adapters are planned.

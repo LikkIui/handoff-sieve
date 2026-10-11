@@ -71,6 +71,15 @@ The pilot review initially failed local selection validation; its separately
 recorded follow-up passed. These are small synthetic diagnostics, not a general
 success-rate claim.
 
+The [public-task development run](evals/public_swe/results/2026-10-11-development-native/README.md)
+now uses ten original SWE-bench Verified issues and upstream tests. With a
+limited eight-action source-only coder, full history resolved 2/10, the strong
+summary 1/10, and HandoffSieve 0/10. A separate two-task 24-action corrective
+retest resolved 2/2, 1/2 and 1/2 respectively. All grading controls passed;
+these results do not establish sufficiency or superiority. The next work is
+source dependencies and reliable takeover execution. The frozen 200-task
+held-out comparison remains unrun; see the [data plan](docs/dataset-plan.md).
+
 ## Try it offline
 
 Requires Python 3.10 or later. Clone the project and run the demo; no API key
@@ -128,7 +137,7 @@ module and passes five behavior checks; the reviewer receives the inherited
 decisions plus new work and tool results, then independently checks the API and
 all eight input combinations. See the [relay example](examples/three_agent_relay/README.md).
 
-## Latest real-provider audit: 2026-10-04–05
+## Historical rules-path audit: 2026-10-04–05
 
 The latest run uses the released `0.3.0a3`, the corrected summary prompt, and
 compact packet rendering. These are 20 short executable tasks with prepared,

@@ -1,0 +1,60 @@
+import json
+import statistics
+from pathlib import Path
+
+root = Path('evals/public_swe/results/2026-10-11-development-native')
+manifest = json.loads((root / 'run-manifest.json').read_text(encoding='utf-8'))
+ids = manifest['task_ids']
+reports = [json.loads((root / task / 'report.json').read_text(encoding='utf-8')) for task in ids]
+grades = {task: json.loads((root / 'upstream' / (task + '.json')).read_text(encoding='utf-8')) for task in ids}
+if not all(row['controls_valid'] for row in grades.values()):
+    raise ValueError('Invalid controls: task success cannot be reported')
+conditions = {}
+for condition in manifest['conditions']:
+    rows = [next(row for row in report['conditions'] if row['condition'] == condition) for report in reports]
+    outcomes = [grades[task]['outcomes'][condition] for task in ids]
+    context = [row['handoff_tokens'] for row in rows if 'handoff_tokens' in row]
+    tool_steps = []
+    tool_errors = 0
+    exhausted = 0
+    for task in ids:
+        p = root / task / (condition + '-continuation.json')
+        if not p.exists():
+            continue
+        continuation = json.loads(p.read_text(encoding='utf-8'))
+        tool_steps.append(continuation['executed_tool_steps'])
+        exhausted += continuation['executed_tool_steps'] >= manifest['coder_steps']
+        tool_errors += sum('Source tool failed: ' in event['content'] for event in continuation['events'] if event['role'] == 'tool')
+    conditions[condition] = {
+        'tasks': len(ids),
+        'resolved': sum(outcome.get('resolved') is True for outcome in outcomes),
+        'upstream_errors': sum(outcome.get('resolved') is None for outcome in outcomes),
+        'candidate_patches': sum(row['status'] == 'candidate_generated' for row in rows),
+        'failed_before_grading': sum(row['status'] == 'failed_before_grading' for row in rows),
+        'packets_measured': len(context),
+        'mean_handoff_tokens': round(statistics.mean(context), 1) if context else None,
+        'model_calls': sum(row['model_calls'] for row in rows),
+        'reported_provider_tokens': sum(row['reported_tokens'] for row in rows),
+        'preparation_calls': sum(row.get('preparation', {}).get('model_calls', row['model_calls'] if row['status'] == 'failed_before_grading' else 0) for row in rows),
+        'preparation_reported_tokens': sum(row.get('preparation', {}).get('reported_tokens', row['reported_tokens'] if row['status'] == 'failed_before_grading' else 0) for row in rows),
+        'tool_actions': sum(tool_steps),
+        'tool_errors': tool_errors,
+        'continuations_at_budget': exhausted,
+    }
+records = [json.loads(p.read_text(encoding='utf-8')) for p in root.glob('*/**/call-*.json')]
+summary = {
+    'kind': 'public development diagnostic, one trial, limited source-only agent',
+    'distinct_tasks': len(ids),
+    'takeover_conditions': len(ids) * len(conditions),
+    'task_ids': ids,
+    'all_controls_valid': True,
+    'formal_held_out_tasks_used': 0,
+    'shared_research': {key: sum(report['research'][key] for report in reports) for key in ['model_calls', 'reported_tokens', 'request_seconds']},
+    'api_request_count': len(records),
+    'reported_provider_tokens': sum((row.get('response', {}).get('usage') or {}).get('total_tokens', 0) for row in records),
+    'response_records_with_usage': sum(bool(row.get('response', {}).get('usage')) for row in records),
+    'conditions': conditions,
+    'grading_workflow': json.loads((root / 'upstream/workflow.json').read_text(encoding='utf-8'))['url'],
+}
+(root / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n', encoding='utf-8')
+print(json.dumps(summary, indent=2))
