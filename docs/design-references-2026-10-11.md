@@ -49,3 +49,18 @@
 
 判断标准仍是强 receiver-aware summary 对照下的接管成功与总成本。如果混合结构不能
 改善这些指标，应调整或简化核心，而不是通过更多 adapter 或弱基线制造优势。
+
+## 本轮官方验收结论
+
+[8 题独立对照](../evals/public_swe/results/2026-10-11-hybrid-development-v2-grading/README.md)
+为完整历史 3/8、强摘要 4/8、混合交接 3/8，全部控制有效。一次交接响应校验失败属于
+产品失败；后续单项修正接管通过，不改写原始结果。同一 7 项实际交付上下文的任务中，
+混合结构比强摘要多 31.5% 交接 token，少 13.9% 总 provider token（含准备调用）。
+因此这次借鉴已经变成可用代码和成本证据，但还没有变成稳定的成功率优势。
+
+四项任务三组共同失败，Django 13212 三份候选源码均含语法错误，当前接收方没有机会
+通过执行发现它们。下一步应借鉴 mini-swe-agent 的行动—反馈循环，让三组共享成熟执行
+环境及各自可见测试反馈，再评估交接差异；不是给 HandoffSieve 增加完整 Agent 框架。
+官方评分中的 `patch_successfully_applied=false` 也可能表示没有可解析的测试输出，不能
+单凭该字段断言 Git 应用补丁失败；依据见
+[固定版本评分代码](https://github.com/SWE-bench/SWE-bench/blob/02e7a74ffd0b707aab73d203fe87bdc7c76afc8e/swebench/harness/grading.py)。

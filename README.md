@@ -50,6 +50,17 @@ completed routing, composition and coding in three model calls, delivering only
 the packet at the receiver HTTP boundary and passing seven API/behavior checks.
 This synthetic demo proves the integration, not general coding superiority.
 
+The [fresh eight-task public development comparison](evals/public_swe/results/2026-10-11-hybrid-development-v2-grading/README.md)
+is now officially graded: Full History **3/8**, strong receiver-aware Summary
+**4/8**, Hybrid HandoffSieve **3/8**. One hybrid preparation failed before takeover;
+the current response-schema fix recovered that case in a
+[separate trial](evals/public_swe/results/2026-10-11-hybrid-takeover-v3-grading/README.md),
+without changing the primary result. On the same seven tasks with delivered
+context, hybrid used **13.9% fewer total provider tokens than the strong summary**,
+including preparation, while its packet was **31.5% larger**. This is a small
+development diagnostic; quality superiority remains unproven. Public bundles
+contain patches and metrics; complete API payloads remain local.
+
 The earlier **extractive handoff** remains available for original-only views:
 
 For ordinary mixed history, a model can now select context by the receiver's

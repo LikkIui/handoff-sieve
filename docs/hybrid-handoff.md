@@ -92,3 +92,11 @@ This uses a synthetic task and real model calls. It inspects the receiver's
 actual HTTP body. It is not a general success-rate benchmark. Public-task
 comparisons use frozen development states and retain earlier failures; see the
 [source review](design-references-2026-10-11.md).
+
+The [eight-task official comparison](../evals/public_swe/results/2026-10-11-hybrid-development-v2-grading/README.md)
+retains all preparation failures: full history 3/8, strong summary 4/8, hybrid
+3/8. The schema-corrected single-case takeover passed separately. The same seven
+delivered-context tasks used fewer total provider tokens with hybrid, but larger
+packets than the strong summary. These observations do not establish stable
+quality superiority. Public artifacts contain patches and metrics only; full
+API records and sender snapshots remain local.

@@ -100,6 +100,16 @@ the implementation and experiment settings are frozen.
 
 ## Completed development evidence
 
+- [Fresh eight-task hybrid comparison](results/2026-10-11-hybrid-development-v2-grading/README.md):
+  full history 3/8, strong summary 4/8, hybrid 3/8; all official controls valid.
+  One hybrid preparation failure prevented a receiver start and stays in the
+  denominator. The same seven delivered-context tasks used 13.9% fewer known
+  total provider tokens with hybrid than summary, but 31.5% larger packets.
+  This does not demonstrate stable superiority. The
+  [separate schema-corrected receiver](results/2026-10-11-hybrid-takeover-v3-grading/README.md)
+  passes Django 13925 with reused baseline patches and does not replace 3/8.
+  Following the user's publication choice, these two public bundles contain
+  patches and metrics only; full API records and sender states remain local.
 - [Remaining twenty fixed development attempts](results/2026-10-11-development-remaining20/README.md):
   full history 7/20, strong summary 8/20, HandoffSieve 5/20; all controls valid.
   Half the tasks had a recorded service interruption in research or a condition.
