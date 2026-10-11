@@ -231,7 +231,7 @@ def _source_windows(text: str) -> list[tuple[int, int, list[int]]] | None:
         ancestors[number] = [owner for _, owner in stack]
         if re.match(
             r"(?:async\s+)?(?:def|class|if|elif|else|for|while|try|except|"
-            r"finally|with|match|case)\b.*:\s*$",
+            r"finally|with|match|case)\b.*:\s*(?:#.*)?$",
             stripped,
         ):
             stack.append((indent, owners[number]))

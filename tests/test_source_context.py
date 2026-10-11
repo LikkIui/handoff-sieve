@@ -230,10 +230,13 @@ def test_optional_chunk_and_its_header_fit_atomically():
     assert result.packet_tokens <= receiver.max_tokens
 
 
-def test_late_window_keeps_observed_function_and_guard_without_missing_scope():
-    lines = ["def score(values):\n"]
+@pytest.mark.parametrize("trailing_comment", ["", "  # compatibility contract"])
+def test_late_window_keeps_observed_function_and_guard_without_missing_scope(
+    trailing_comment,
+):
+    lines = [f"def score(values):{trailing_comment}\n"]
     lines.extend("    values.append(0)\n" for _ in range(43))
-    lines.append("    if values:\n")
+    lines.append(f"    if values:{trailing_comment}\n")
     lines.extend("        values.append(1)\n" for _ in range(49))
     lines.append("        return values\n")
     original = "File: src/scoring.py (500 lines)\n" + "".join(
