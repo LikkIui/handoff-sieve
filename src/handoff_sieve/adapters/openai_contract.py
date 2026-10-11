@@ -17,6 +17,11 @@ from handoff_sieve.adapters.openai_agents import (
 )
 from handoff_sieve.compiler import ReceiverContract
 from handoff_sieve.exceptions import HandoffIntegrityError, UnsupportedAdapterModeError
+from handoff_sieve.hybrid import (
+    HandoffComposer,
+    HybridHandoffCompilation,
+    compile_hybrid_handoff,
+)
 from handoff_sieve.model_selection import (
     HandoffSelector,
     ModelHandoffCompilation,
@@ -255,6 +260,46 @@ class OpenAIModelHandoffFilter:
             ),
             self.contract,
             selector=self.selector,
+            pipeline=self.pipeline,
+        )
+        if self.on_compile is not None:
+            self.on_compile(compilation)
+        return OpenAIHandoffPacketFilter(compilation.packet)(data)
+
+
+class OpenAIHybridHandoffFilter:
+    """Compose a brief and exact evidence from the current SDK handoff snapshot."""
+
+    def __init__(
+        self,
+        contract: ReceiverContract,
+        *,
+        composer: HandoffComposer,
+        sender: str,
+        receiver: str,
+        artifacts: Sequence[Artifact] = (),
+        pipeline: HandoffPipeline | None = None,
+        on_compile: Callable[[HybridHandoffCompilation], None] | None = None,
+    ) -> None:
+        self.contract = contract
+        self.composer = composer
+        self.sender = sender
+        self.receiver = receiver
+        self.artifacts = tuple(item.model_copy(deep=True) for item in artifacts)
+        self.pipeline = pipeline
+        self.on_compile = on_compile
+
+    async def __call__(self, data: Any) -> Any:
+        messages, inherited = _state_from_snapshot(data, sender=self.sender)
+        compilation = await compile_hybrid_handoff(
+            HandoffEnvelope(
+                sender=self.sender,
+                receiver=self.receiver,
+                messages=messages,
+                artifacts=merge_artifacts(inherited, self.artifacts),
+            ),
+            self.contract,
+            composer=self.composer,
             pipeline=self.pipeline,
         )
         if self.on_compile is not None:

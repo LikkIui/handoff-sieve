@@ -23,6 +23,15 @@ from handoff_sieve.exceptions import (
     UnmatchedRouteError,
     UnsupportedAdapterModeError,
 )
+from handoff_sieve.hybrid import (
+    BriefStatement,
+    HandoffComposer,
+    HybridHandoffCompilation,
+    HybridPlan,
+    HybridResponse,
+    SourceExcerpt,
+    compile_hybrid_handoff,
+)
 from handoff_sieve.model_selection import (
     HandoffSelector,
     ModelHandoffCompilation,
@@ -52,6 +61,13 @@ from handoff_sieve.state import prepare_sender_state
 from handoff_sieve.tokens import ApproxTokenCounter, TiktokenCounter, TokenCounter
 
 __all__ = [
+    "BriefStatement",
+    "HandoffComposer",
+    "HybridHandoffCompilation",
+    "HybridPlan",
+    "HybridResponse",
+    "SourceExcerpt",
+    "compile_hybrid_handoff",
     "AmbiguousRouteError",
     "ApproxTokenCounter",
     "Artifact",

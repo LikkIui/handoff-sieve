@@ -12,6 +12,18 @@ unchanged; PyPI remains paused.
 
 ### Added
 
+- Optional `compile_hybrid_handoff()`, `HybridPlan`, `BriefStatement` and
+  `SourceExcerpt`: a receiver-specific brief plus host-copied original line
+  ranges. Observations, proposed actions and unverified hypotheses remain
+  distinct. Citations check references, not semantic entailment.
+- One-call `OpenAIHandoffComposer` and `OpenAIHybridHandoffFilter` at the current
+  SDK snapshot boundary. Response schemas restrict sections, sources and need
+  indices to the current contract. `sdk_handoff.py --mode hybrid` records the
+  actual receiver HTTP body and checks the same seven API/behavior requirements.
+- Pinned source review of agent-handoff, agent-handoff-protocol, LLMLingua and
+  mini-swe-agent; the first two original compression functions were run on the
+  same sixteen development states. Their output-size comparison does not claim
+  downstream quality superiority.
 - `compile_model_handoff()` selects original source spans from ordinary mixed
   history according to a receiver's goal and natural-language `needs`.
 - Ranked, structured selection plans, source references for need coverage,

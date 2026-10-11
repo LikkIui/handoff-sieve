@@ -1,0 +1,39 @@
+import json
+import shutil
+from pathlib import Path
+from statistics import mean
+
+from handoff_sieve import ApproxTokenCounter
+
+root = Path.cwd()
+source = root / 'work/reference-review-20261011/actual-results.json'
+out = root / 'evals/public_swe/results/2026-10-11-reference-compressors'
+out.mkdir(parents=True, exist_ok=False)
+data = json.loads(source.read_text(encoding='utf-8'))
+counter = ApproxTokenCounter()
+rows = []
+for task in data['rows']:
+    row = {k: task[k] for k in ('instance_id', 'sender_sha256', 'contract_sha256')}
+    for name in ('agent_handoff', 'agent_handoff_protocol'):
+        context = json.dumps({'goal': task['goal'], 'handoff': task[name]['returned']},
+                             ensure_ascii=False, separators=(',', ':'))
+        row[name] = {'complete_context_tokens': counter.count_text(context),
+                     'within_4000_tokens': counter.count_text(context) <= 4000,
+                     'reported_by_reference': task[name]['returned'].get('tokenCount',
+                         task[name]['returned'].get('compressedTokenCount')),
+                     'preparation_model_calls': 0}
+    rows.append(row)
+summary = {'tasks': len(rows), 'kind': 'original compressor output and size diagnostic; no receiver trial',
+           'same_sender_states_as': '2026-10-11-hybrid-development-v2',
+           'source_run': '2026-10-11-development-remaining20',
+           'token_counter': 'same built-in estimate on complete goal plus returned JSON',
+           'node': data['node'], 'typescript': data['typescript'], 'rows': rows,
+           'downstream_success_measured': False,
+           'implementations': {name: {'mean_complete_context_tokens': mean(r[name]['complete_context_tokens'] for r in rows),
+                                     'within_4000_tokens': sum(r[name]['within_4000_tokens'] for r in rows)}
+                               for name in ('agent_handoff', 'agent_handoff_protocol')}}
+shutil.copyfile(source, out / 'actual-results.json')
+shutil.copyfile(root / 'work/run-reference-compressors.cjs', out / 'run-originals.cjs.txt')
+shutil.copyfile(__file__, out / 'summarize-reproduce.py.txt')
+(out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n', encoding='utf-8')
+print(json.dumps(summary['implementations']))

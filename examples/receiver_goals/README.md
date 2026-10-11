@@ -9,6 +9,7 @@ headers are not written to result files.
 ```bash
 python examples/receiver_goals/demo.py --model YOUR_MODEL --output outputs/receiver-goals
 python examples/receiver_goals/sdk_handoff.py --model YOUR_MODEL --output outputs/receiver-sdk
+python examples/receiver_goals/sdk_handoff.py --mode hybrid --model YOUR_MODEL --output outputs/receiver-hybrid-sdk
 python -m examples.receiver_goals.pilots --model YOUR_MODEL --output outputs/receiver-pilots
 ```
 
@@ -21,6 +22,9 @@ Each output directory must be new, preserving earlier runs and failures.
 - `sdk_handoff.py`: a live researcher routes to a coder using the real Agents
   SDK. The selector runs in the async handoff filter. The actual receiver HTTP
   body must contain one canonical packet with no server-side continuation.
+  `--mode hybrid` uses a concise generated brief and host-copied original line
+  ranges; the default keeps the earlier original-span selection. Both use the
+  same fixture, receiver and seven acceptance checks. Artifacts stay whole.
 - `pilots`: reuses the checkout's three public executable takeover tasks and
   existing host acceptance. Removes category labels for a disclosed diagnostic;
   content and public starter files remain unchanged. Compares full history,

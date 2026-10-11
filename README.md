@@ -24,6 +24,34 @@ information disclosure.
 
 ## New: model-assisted handoff (`0.4.0a1` development)
 
+The new optional **hybrid handoff** prepares a concise receiver brief with
+necessary original evidence. It separates observations, proposed next actions
+and unverified hypotheses. The model selects source IDs and message line ranges;
+the application copies exact code and constraints, avoiding model transcription
+of quotes, escaping and whitespace. Named artifacts remain whole.
+
+```python
+result = await compile_hybrid_handoff(
+    sender_state,
+    ReceiverContract(
+        goal="Implement the authentication module",
+        needs=("Accepted constraints", "Unresolved work"),
+        preferred=("constraints", "decisions", "pending_work", "evidence"),
+        max_tokens=4000,
+    ),
+    composer=OpenAIHandoffComposer(client, model="YOUR_MODEL"),
+)
+```
+
+[Hybrid usage and SDK integration](docs/hybrid-handoff.md) explain the new API.
+It adds one preparation call and does not independently verify generated claims.
+The [real SDK demo](evals/takeover/results/2026-10-11-hybrid-sdk/README.md)
+completed routing, composition and coding in three model calls, delivering only
+the packet at the receiver HTTP boundary and passing seven API/behavior checks.
+This synthetic demo proves the integration, not general coding superiority.
+
+The earlier **extractive handoff** remains available for original-only views:
+
 For ordinary mixed history, a model can now select context by the receiver's
 actual goal and natural-language needs. The application builds the packet by
 copying the selected **original source spans**; the selector does not rewrite
@@ -55,6 +83,7 @@ Try the real-model example from the current `main` checkout:
 python -m pip install -e ".[openai]"
 python examples/receiver_goals/demo.py --model YOUR_MODEL --output outputs/receiver-goals
 python examples/receiver_goals/sdk_handoff.py --model YOUR_MODEL --output outputs/receiver-sdk
+python examples/receiver_goals/sdk_handoff.py --mode hybrid --model YOUR_MODEL --output outputs/hybrid-sdk
 ```
 
 Use `OPENAI_API_KEY` / `OPENAI_BASE_URL`, or enter the credential at the hidden
@@ -63,7 +92,7 @@ new API. The model call adds preparation cost; source references and budgets
 are checked locally, while semantic sufficiency still needs downstream testing.
 The existing deterministic path remains available without model calls.
 
-[Inspected external code and adopted ideas](docs/design-references-2026-10-10.md)
+[Inspected external code and actual compressor comparisons](docs/design-references-2026-10-11.md)
 cover agent-handoff, agent-handoff-protocol, LLMLingua, RTK and handoff context
 engineering. This development version is not yet the published `0.3.0a3` release.
 

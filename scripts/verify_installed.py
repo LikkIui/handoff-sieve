@@ -14,6 +14,7 @@ from handoff_sieve import (
     ReceiverContract,
     compile_handoff,
     compile_history,
+    compile_hybrid_handoff,
     compile_model_handoff,
 )
 from handoff_sieve.policies import (
@@ -41,6 +42,7 @@ def verify_core(
     assert installed_version == expected_version
     assert handoff_sieve.__version__ == expected_version
     assert callable(compile_model_handoff)
+    assert callable(compile_hybrid_handoff)
 
     package_path = Path(handoff_sieve.__file__).resolve()
     source_root = forbid_source_root.resolve()

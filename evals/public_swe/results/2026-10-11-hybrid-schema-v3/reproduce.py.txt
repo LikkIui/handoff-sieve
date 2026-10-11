@@ -1,0 +1,67 @@
+"""Two explicit corrective preparation calls, not new receiver trials."""
+import asyncio
+import getpass
+import hashlib
+import json
+import shutil
+from pathlib import Path
+from types import SimpleNamespace
+
+from openai import AsyncOpenAI
+
+from evals.public_swe.run import Recorder, save
+from handoff_sieve import HandoffEnvelope, ReceiverContract, compile_hybrid_handoff
+from handoff_sieve.adapters import OpenAIHandoffComposer
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE = ROOT / 'evals/public_swe/results/2026-10-11-hybrid-development-v2'
+OUT = ROOT / 'evals/public_swe/results/2026-10-11-hybrid-schema-v3'
+TASKS = ('django__django-13925', 'django__django-15741')
+
+
+async def main():
+    if OUT.exists():
+        raise FileExistsError('Corrective output exists; no silent retry')
+    key = getpass.getpass('API credential: ')
+    OUT.mkdir(parents=True, exist_ok=False)
+    shutil.copyfile(__file__, OUT / 'reproduce.py.txt')
+    save(OUT / 'run-manifest.json', {
+        'kind': 'corrective schema-bounded preparation diagnostic', 'task_ids': list(TASKS),
+        'source_run': SOURCE.relative_to(ROOT).as_posix(), 'split': 'development',
+        'model': 'gpt-5.6-sol', 'base_url': 'https://ckffai.com/v1',
+        'model_alias_identity_verified': False, 'automatic_retries': 0,
+        'receiver_trials': 0, 'not_an_independent_success_trial': True,
+        'semantic_sufficiency_claimed': False,
+        'composer_sha256': hashlib.sha256((ROOT / 'src/handoff_sieve/adapters/openai_composer.py').read_bytes()).hexdigest(),
+        'compiler_sha256': hashlib.sha256((ROOT / 'src/handoff_sieve/hybrid.py').read_bytes()).hexdigest(),
+    })
+    reports = []
+    async with AsyncOpenAI(api_key=key, base_url='https://ckffai.com/v1', timeout=180, max_retries=0) as client:
+        key = None
+        for task_id in TASKS:
+            folder = OUT / task_id
+            folder.mkdir()
+            for name in ('sender.json', 'contract.json'):
+                shutil.copyfile(SOURCE / task_id / name, folder / name)
+            calls = Recorder(client, folder / 'preparation')
+            row = {'instance_id': task_id}
+            try:
+                result = await compile_hybrid_handoff(
+                    HandoffEnvelope.model_validate_json((folder / 'sender.json').read_bytes()),
+                    ReceiverContract.model_validate_json((folder / 'contract.json').read_bytes()),
+                    composer=OpenAIHandoffComposer(SimpleNamespace(responses=calls),
+                        model='gpt-5.6-sol', shared_source_available=True))
+                save(folder / 'compilation.json', result.model_dump(mode='json'))
+                row.update(status='valid_packet', packet_tokens=result.packet_tokens)
+            except Exception as error:
+                row.update(status='failed', error_type=type(error).__name__)
+                if type(error).__module__.startswith('handoff_sieve'):
+                    row['error_message'] = str(error)
+            row.update(calls.usage())
+            save(folder / 'report.json', row)
+            reports.append(row)
+            print(json.dumps(row), flush=True)
+    save(OUT / 'reports.json', reports)
+
+
+asyncio.run(main())

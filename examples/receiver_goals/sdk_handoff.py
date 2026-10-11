@@ -23,7 +23,12 @@ from demo import CODER_INSTRUCTIONS, grade, receiver_contract, sender_state
 from openai import AsyncOpenAI
 
 from handoff_sieve import HandoffPacket
-from handoff_sieve.adapters import OpenAIHandoffSelector, OpenAIModelHandoffFilter
+from handoff_sieve.adapters import (
+    OpenAIHandoffComposer,
+    OpenAIHandoffSelector,
+    OpenAIHybridHandoffFilter,
+    OpenAIModelHandoffFilter,
+)
 
 
 async def run(args) -> dict:
@@ -78,16 +83,28 @@ async def run(args) -> dict:
     ):
         key = None
         coder = Agent(name="coder", instructions=CODER_INSTRUCTIONS)
-        transfer = handoff(
-            coder,
-            input_filter=OpenAIModelHandoffFilter(
+        packet_filter = (
+            OpenAIHybridHandoffFilter(
+                receiver_contract("coder"),
+                composer=OpenAIHandoffComposer(client, model=args.model),
+                sender="researcher",
+                receiver="coder",
+                artifacts=source.artifacts,
+                on_compile=compilations.append,
+            )
+            if args.mode == "hybrid"
+            else OpenAIModelHandoffFilter(
                 receiver_contract("coder"),
                 selector=OpenAIHandoffSelector(client, model=args.model),
                 sender="researcher",
                 receiver="coder",
                 artifacts=source.artifacts,
                 on_compile=compilations.append,
-            ),
+            )
+        )
+        transfer = handoff(
+            coder,
+            input_filter=packet_filter,
         )
         researcher = Agent(
             name="researcher",
@@ -131,6 +148,7 @@ async def run(args) -> dict:
     acceptance = grade("coder", result.final_output, args.output / "coder")
     report = {
         "synthetic": True,
+        "handoff_mode": args.mode,
         "model": args.model,
         "actual_calls": len(requests),
         "source_unchanged": source_unchanged,
@@ -162,6 +180,9 @@ async def run(args) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", required=True)
+    parser.add_argument(
+        "--mode", choices=("extractive", "hybrid"), default="extractive"
+    )
     parser.add_argument("--base-url", default=os.environ.get("OPENAI_BASE_URL"))
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()

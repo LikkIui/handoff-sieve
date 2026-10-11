@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
 
 from handoff_sieve import (
+    BriefStatement,
     BudgetExceededError,
     ContractError,
     HandoffIntegrityError,
+    HybridPlan,
+    HybridResponse,
     ReceiverContract,
     UnsupportedAdapterModeError,
 )
 from handoff_sieve.adapters import (
+    OpenAIHybridHandoffFilter,
     OpenAIReceiverContractFilter,
     compile_openai_handoff,
 )
@@ -34,6 +39,71 @@ def snapshot(history=(), *, prior=(), new=(), model=None) -> HandoffInputData:
         input_items=None if model is None else tuple(item(raw) for raw in model),
         run_context=object(),
     )
+
+
+def test_hybrid_filter_uses_latest_snapshot_and_only_delivers_packet() -> None:
+    reports = []
+
+    class Composer:
+        async def compose(self, request):
+            assert len(request.units) == 1
+            source = request.units[0]
+            return HybridResponse(
+                plan=HybridPlan(
+                    brief=[
+                        BriefStatement(
+                            section="decisions",
+                            content=source.content,
+                            source_ids=[source.source_id],
+                            need_indices=[],
+                            status="observed",
+                        )
+                    ],
+                    excerpts=[],
+                    missing_needs=[],
+                )
+            )
+
+    adapter = OpenAIHybridHandoffFilter(
+        ReceiverContract(goal="Implement", required=("decisions",), max_tokens=600),
+        composer=Composer(),
+        sender="researcher",
+        receiver="coder",
+        on_compile=reports.append,
+    )
+    for text in ("First decision", "Latest decision"):
+        data = snapshot(
+            new=({"role": "assistant", "content": "stale session"},),
+            model=({"role": "assistant", "content": text},),
+        )
+        before = repr(data)
+        filtered = asyncio.run(adapter(data))
+        packet = json.loads(filtered.input_history[0]["content"])
+        assert packet["decisions"][0]["content"] == text
+        assert "stale session" not in filtered.input_history[0]["content"]
+        assert filtered.new_items is data.new_items
+        assert filtered.run_context is data.run_context
+        assert filtered.pre_handoff_items == filtered.input_items == ()
+        assert repr(data) == before
+    assert len(reports) == 2
+
+
+def test_hybrid_filter_rejects_orphan_tool_result_before_composer() -> None:
+    class Composer:
+        async def compose(self, request):
+            raise AssertionError("Invalid snapshot must fail before a paid call")
+
+    data = snapshot(
+        ({"type": "function_call_output", "call_id": "orphan", "output": "unpaired"},)
+    )
+    adapter = OpenAIHybridHandoffFilter(
+        ReceiverContract(goal="Implement", preferred=("evidence",), max_tokens=600),
+        composer=Composer(),
+        sender="researcher",
+        receiver="coder",
+    )
+    with pytest.raises(HandoffIntegrityError):
+        asyncio.run(adapter(data))
 
 
 def test_live_snapshot_includes_new_decisions_and_paired_tool_result() -> None:

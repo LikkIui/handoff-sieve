@@ -1,0 +1,47 @@
+// Runs pinned original implementations; TypeScript only erases their types.
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const ts = require('./reference-review-20261011/runtime/node_modules/typescript');
+const root = path.join(__dirname, 'reference-review-20261011');
+const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+const compiled = path.join(root, 'compiled');
+fs.mkdirSync(compiled, {recursive: true});
+for (const [source, target] of [['agent-handoff-compress.ts', 'agent-compress.js'],
+    ['protocol-hybrid.ts', 'protocol-hybrid.js'], ['protocol-base.ts', 'context-compressor.js']]) {
+  const code = fs.readFileSync(path.join(root, source));
+  const expected = manifest.find(r => r.name === source);
+  if (crypto.createHash('sha256').update(code).digest('hex') !== expected.sha256)
+    throw new Error('Reference source hash differs');
+  const result = ts.transpileModule(code.toString('utf8'), {compilerOptions: {
+    target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS}});
+  fs.writeFileSync(path.join(compiled, target), result.outputText);
+}
+const {compressContext} = require(path.join(compiled, 'agent-compress.js'));
+const {HybridCompressor} = require(path.join(compiled, 'protocol-hybrid.js'));
+async function main() {
+  const input = JSON.parse(fs.readFileSync(path.join(root, 'inputs.json'), 'utf8'));
+  const rows = [];
+  for (const task of input) {
+    const messages = task.sender.messages.map((m, index) => ({
+      id: `m${index}`, role: m.role, content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+      timestamp: index, metadata: m.metadata,
+    }));
+    const focus = [...new Set(task.contract.goal.toLowerCase().match(/[a-z_][a-z_0-9]{4,}/g) || [])];
+    const started = performance.now();
+    const agent = compressContext({messages, maxTokens: task.material_budget, strategy: 'relevance', focus});
+    const agentMs = performance.now() - started;
+    const second = performance.now();
+    const protocol = await new HybridCompressor().compress(messages, {maxTokens: task.material_budget});
+    rows.push({instance_id: task.instance_id, sender_sha256: task.sender_sha256,
+      contract_sha256: task.contract_sha256, goal: task.contract.goal,
+      max_tokens: task.contract.max_tokens, material_budget: task.material_budget,
+      agent_handoff: {options: {strategy: 'relevance', focus}, returned: agent, seconds: agentMs / 1000},
+      agent_handoff_protocol: {options: {maxTokens: task.material_budget}, returned: protocol,
+                              seconds: (performance.now() - second) / 1000}});
+  }
+  fs.writeFileSync(path.join(root, 'actual-results.json'), JSON.stringify({
+    typescript: ts.version, node: process.version, references: manifest, rows}, null, 2) + '\n');
+  console.log(JSON.stringify({tasks: rows.length, implementations_executed: 2, model_calls: 0}));
+}
+main().catch(e => {console.error(e); process.exitCode = 1;});

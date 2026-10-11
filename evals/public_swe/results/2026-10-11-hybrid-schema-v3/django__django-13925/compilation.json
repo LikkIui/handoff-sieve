@@ -1,0 +1,334 @@
+{
+  "packet": {
+    "sender": "researcher",
+    "receiver": "coder",
+    "goal": "Fix this GitHub issue:\nmodels.W042 is raised on inherited manually specified primary key.\nDescription\n\t\nI have models which inherit from other models, and they should inherit the primary key. This works fine with Django 3.1. However, if I install Django 3.2 alpha, when I run make_migrations I get the following error messages:\nSystem check identified some issues:\nWARNINGS:\naccounts.ReservedUsername: (models.W042) Auto-created primary key used when not defining a primary key type, by default 'django.db.models.AutoField'.\n\t\tHINT: Configure the DEFAULT_AUTO_FIELD setting or the SpeedyCoreAccountsConfig.default_auto_field attribute to point to a subclass of AutoField, e.g. 'django.db.models.BigAutoField'.\naccounts.User: (models.W042) Auto-created primary key used when not defining a primary key type, by default 'django.db.models.AutoField'.\n\t\tHINT: Configure the DEFAULT_AUTO_FIELD setting or the SpeedyCoreAccountsConfig.default_auto_field attribute to point to a subclass of AutoField, e.g. 'django.db.models.BigAutoField'.\nblocks.Block: (models.W042) Auto-created primary key used when not defining a primary key type, by default 'django.db.models.AutoField'.\n\t\tHINT: Configure the DEFAULT_AUTO_FIELD setting or the AppConfig.default_auto_field attribute to point to a subclass of AutoField, e.g. 'django.db.models.BigAutoField'.\ncontact_by_form.Feedback: (models.W042) Auto-created primary key used when not defining a primary key type, by default 'django.db.models.AutoField'.\n\t\tHINT: Configure the DEFAULT_AUTO_FIELD setting or the SpeedyCoreContactByFormConfig.default_auto_field attribute to point to a subclass of AutoField, e.g. 'django.db.models.BigAutoField'.\ncore_messages.ReadMark: (models.W042) Auto-created primary key used when not defining a primary key type, by default 'django.db.models.AutoField'.\n\t\tHINT: Configure the DEFAULT_AUTO_FIELD setting or the SpeedyCoreMessagesConfig.default_auto_field attribute to point to a subclass of AutoField, e.g. 'django.db.models.BigAutoField'.\nfriendship.Block: (models.W042) Auto-created primary key used when not defining a primary key type, by default 'django.db.models.AutoField'.\n\t\tHINT: Configure the DEFAULT_AUTO_FIELD setting or the AppConfig.default_auto_field attribute to point to a subclass of AutoField, e.g. 'django.db.models.BigAutoField'.\nfriendship.Follow: (models.W042) Auto-created primary key used when not defining a primary key type, by default 'django.db.models.AutoField'.\n\t\tHINT: Configure the DEFAULT_AUTO_FIELD setting or the AppConfig.default_auto_field attribute to point to a subclass of AutoField, e.g. 'django.db.models.BigAutoField'.\nfriendship.Friend: (models.W042) Auto-created primary key used when not defining a primary key type, by default 'django.db.models.AutoField'.\n\t\tHINT: Configure the DEFAULT_AUTO_FIELD setting or the AppConfig.default_auto_field attribute to point to a subclass of AutoField, e.g. 'django.db.models.BigAutoField'.\nfriendship.FriendshipRequest: (models.W042) Auto-created primary key used when not defining a primary key type, by default 'django.db.models.AutoField'.\n\t\tHINT: Configure the DEFAULT_AUTO_FIELD setting or the AppConfig.default_auto_field attribute to point to a subclass of AutoField, e.g. 'django.db.models.BigAutoField'.\nlikes.UserLike: (models.W042) Auto-created primary key used when not defining a primary key type, by default 'django.db.models.AutoField'.\n\t\tHINT: Configure the DEFAULT_AUTO_FIELD setting or the AppConfig.default_auto_field attribute to point to a subclass of AutoField, e.g. 'django.db.models.BigAutoField'.\nuploads.Image: (models.W042) Auto-created primary key used when not defining a primary key type, by default 'django.db.models.AutoField'.\n\t\tHINT: Configure the DEFAULT_AUTO_FIELD setting or the AppConfig.default_auto_field attribute to point to a subclass of AutoField, e.g. 'django.db.models.BigAutoField'.\nThese models should not use auto-created primary keys! I already defined the primary key in the ancestor of the model. For example class Entity which class User inherits from. It looks to me like a bug in Django 3.2 alpha.",
+    "constraints": [
+      {
+        "role": "assistant",
+        "content": "The reported regression concerns concrete child models that inherit an explicitly declared primary key and add no own PK; they should not receive models.W042. Preserve warnings for genuinely implicit default primary keys.",
+        "kind": "constraints",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.brief_sources": [
+            "m8"
+          ],
+          "handoff_sieve.brief_status": "observed",
+          "handoff_sieve.hybrid_item": "b0"
+        }
+      }
+    ],
+    "decisions": [],
+    "evidence": [
+      {
+        "role": "assistant",
+        "content": "W042 is emitted by Model._check_default_pk() in django/db/models/base.py, invoked from Model.check(); the current condition is _meta.pk.auto_created plus both default-auto-field settings being unoverridden.",
+        "kind": "evidence",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.brief_sources": [
+            "m5",
+            "m8"
+          ],
+          "handoff_sieve.brief_status": "observed",
+          "handoff_sieve.hybrid_item": "b1"
+        }
+      },
+      {
+        "role": "assistant",
+        "content": "[Unverified] In multi-table inheritance, the child PK is reported as an auto-created parent link even when the ancestor PK was manually declared. It is unresolved whether parent-link metadata alone is the correct discriminator; verify the field construction conventions before changing the predicate.",
+        "kind": "evidence",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.brief_sources": [
+            "m8"
+          ],
+          "handoff_sieve.brief_status": "uncertain",
+          "handoff_sieve.hybrid_item": "b2"
+        }
+      },
+      {
+        "role": "tool",
+        "content": "1298:     @classmethod\n1299:     def _check_default_pk(cls):\n1300:         if (\n1301:             cls._meta.pk.auto_created and\n1302:             not settings.is_overridden('DEFAULT_AUTO_FIELD') and\n1303:             not cls._meta.app_config._is_default_auto_field_overridden\n1304:         ):\n1305:             return [\n1306:                 checks.Warning(\n1307:                     f\"Auto-created primary key used when not defining a \"\n1308:                     f\"primary key type, by default \"\n1309:                     f\"'{settings.DEFAULT_AUTO_FIELD}'.\",\n1310:                     hint=(\n1311:                         f\"Configure the DEFAULT_AUTO_FIELD setting or the \"\n1312:                         f\"{cls._meta.app_config.__class__.__qualname__}.\"\n1313:                         f\"default_auto_field attribute to point to a subclass \"\n1314:                         f\"of AutoField, e.g. 'django.db.models.BigAutoField'.\"\n1315:                     ),\n1316:                     obj=cls,\n1317:                     id='models.W042',\n1318:                 ),\n1319:             ]\n1320:         return []\n",
+        "kind": "evidence",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.excerpt_source": "m5",
+          "handoff_sieve.hybrid_item": "e0",
+          "handoff_sieve.excerpt_lines": [
+            31,
+            53
+          ]
+        }
+      }
+    ],
+    "completed_work": [
+      {
+        "role": "assistant",
+        "content": "The relevant implementation location was identified at django/db/models/base.py:1298-1320, and the existing W042 test location was identified at tests/check_framework/test_model_checks.py around line 394.",
+        "kind": "completed_work",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.brief_sources": [
+            "m3",
+            "m5",
+            "m7",
+            "m8"
+          ],
+          "handoff_sieve.brief_status": "observed",
+          "handoff_sieve.hybrid_item": "b3"
+        }
+      }
+    ],
+    "failed_attempts": [
+      {
+        "role": "assistant",
+        "content": "No patch or tests were executed. The existing W042 test body and ModelBase primary-key setup were not read, so exact behavior for abstract inheritance and proxy models remains unverified.",
+        "kind": "failed_attempts",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.brief_sources": [
+            "m8"
+          ],
+          "handoff_sieve.brief_status": "observed",
+          "handoff_sieve.hybrid_item": "b4"
+        }
+      }
+    ],
+    "pending_work": [
+      {
+        "role": "assistant",
+        "content": "[Proposed] Inspect ModelBase PK setup and the existing W042 tests, then add a regression for a concrete parent with a manual PK and a concrete child without a PK, asserting no models.W042. Also test that genuinely implicit PKs still warn, and determine expected abstract-base/proxy behavior.",
+        "kind": "pending_work",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.brief_sources": [
+            "m7",
+            "m8"
+          ],
+          "handoff_sieve.brief_status": "proposed",
+          "handoff_sieve.hybrid_item": "b5"
+        }
+      }
+    ],
+    "artifacts": [],
+    "tool_results": [
+      {
+        "role": "assistant",
+        "content": "Repository listing and searches located the implementation and test references; the final handoff explicitly records that no tests were run.",
+        "kind": "tool_results",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.brief_sources": [
+            "m1",
+            "m3",
+            "m7",
+            "m8",
+            "m9"
+          ],
+          "handoff_sieve.brief_status": "observed",
+          "handoff_sieve.hybrid_item": "b6"
+        }
+      },
+      {
+        "role": "tool",
+        "content": "Executed search tests:\ntests/check_framework/test_model_checks.py:394:                 id='models.W042',",
+        "kind": "tool_results",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.excerpt_source": "m7",
+          "handoff_sieve.hybrid_item": "e1",
+          "handoff_sieve.excerpt_lines": [
+            1,
+            2
+          ]
+        }
+      }
+    ]
+  },
+  "report": {
+    "schema_version": "1",
+    "handoff_id": "917d80eb4fe54202ad407f54961833ab",
+    "request_id": null,
+    "started_at": "2026-10-11T14:45:47.557108Z",
+    "completed_at": "2026-10-11T14:45:47.558879Z",
+    "duration_ms": 1.8076000269502401,
+    "status": "passed",
+    "failure_code": null,
+    "failed_policy": null,
+    "sender": "researcher",
+    "receiver": "coder",
+    "token_counter": "approx_utf8",
+    "config_fingerprint": "25d92ff20a13c4a518eb72bcf5b459dc339afcbb759b23228ba47dcc35929eb2",
+    "original_tokens": 2235,
+    "transmitted_tokens": 2235,
+    "removed_messages": 0,
+    "redactions": 0,
+    "duplicates_removed": 0,
+    "protected_messages": 0,
+    "summarizer_input_tokens": 0,
+    "summarizer_output_tokens": 0,
+    "summarizer_provider_input_tokens": null,
+    "summarizer_provider_output_tokens": null,
+    "events": [
+      {
+        "policy": "receiver_contract",
+        "policy_version": "1",
+        "action": "compiled",
+        "count": 0,
+        "details": {
+          "max_tokens": 4000,
+          "packet_tokens": 2193,
+          "required_tokens": 2193,
+          "preferred_omitted_for_budget": {}
+        }
+      },
+      {
+        "policy": "hybrid_composer",
+        "policy_version": "1",
+        "action": "composed",
+        "count": 7,
+        "details": {
+          "model_calls": 1,
+          "semantic_claims_verified": false
+        }
+      }
+    ],
+    "warnings": []
+  },
+  "source_tokens": 4394,
+  "packet_tokens": 2193,
+  "omitted_count": 0,
+  "budget": {
+    "stage": "pipeline_output",
+    "token_counter": "approx_utf8",
+    "max_tokens": 4000,
+    "required_tokens": 2193,
+    "packet_tokens": 2193,
+    "preferred_selected": {},
+    "preferred_omitted_before_pipeline": {},
+    "preferred_omitted_after_pipeline": {}
+  },
+  "plan": {
+    "brief": [
+      {
+        "section": "constraints",
+        "content": "The reported regression concerns concrete child models that inherit an explicitly declared primary key and add no own PK; they should not receive models.W042. Preserve warnings for genuinely implicit default primary keys.",
+        "source_ids": [
+          "m8"
+        ],
+        "need_indices": [
+          0,
+          1
+        ],
+        "status": "observed"
+      },
+      {
+        "section": "evidence",
+        "content": "W042 is emitted by Model._check_default_pk() in django/db/models/base.py, invoked from Model.check(); the current condition is _meta.pk.auto_created plus both default-auto-field settings being unoverridden.",
+        "source_ids": [
+          "m5",
+          "m8"
+        ],
+        "need_indices": [
+          0
+        ],
+        "status": "observed"
+      },
+      {
+        "section": "evidence",
+        "content": "In multi-table inheritance, the child PK is reported as an auto-created parent link even when the ancestor PK was manually declared. It is unresolved whether parent-link metadata alone is the correct discriminator; verify the field construction conventions before changing the predicate.",
+        "source_ids": [
+          "m8"
+        ],
+        "need_indices": [
+          0,
+          1
+        ],
+        "status": "uncertain"
+      },
+      {
+        "section": "completed_work",
+        "content": "The relevant implementation location was identified at django/db/models/base.py:1298-1320, and the existing W042 test location was identified at tests/check_framework/test_model_checks.py around line 394.",
+        "source_ids": [
+          "m3",
+          "m5",
+          "m7",
+          "m8"
+        ],
+        "need_indices": [
+          0
+        ],
+        "status": "observed"
+      },
+      {
+        "section": "failed_attempts",
+        "content": "No patch or tests were executed. The existing W042 test body and ModelBase primary-key setup were not read, so exact behavior for abstract inheritance and proxy models remains unverified.",
+        "source_ids": [
+          "m8"
+        ],
+        "need_indices": [
+          0,
+          1
+        ],
+        "status": "observed"
+      },
+      {
+        "section": "pending_work",
+        "content": "Inspect ModelBase PK setup and the existing W042 tests, then add a regression for a concrete parent with a manual PK and a concrete child without a PK, asserting no models.W042. Also test that genuinely implicit PKs still warn, and determine expected abstract-base/proxy behavior.",
+        "source_ids": [
+          "m7",
+          "m8"
+        ],
+        "need_indices": [
+          0,
+          1
+        ],
+        "status": "proposed"
+      },
+      {
+        "section": "tool_results",
+        "content": "Repository listing and searches located the implementation and test references; the final handoff explicitly records that no tests were run.",
+        "source_ids": [
+          "m1",
+          "m3",
+          "m7",
+          "m8",
+          "m9"
+        ],
+        "need_indices": [
+          0,
+          1
+        ],
+        "status": "observed"
+      }
+    ],
+    "excerpts": [
+      {
+        "source_id": "m5",
+        "section": "evidence",
+        "start_line": 31,
+        "end_line": 53,
+        "essential": true
+      },
+      {
+        "source_id": "m7",
+        "section": "tool_results",
+        "start_line": 1,
+        "end_line": 2,
+        "essential": false
+      }
+    ],
+    "missing_needs": []
+  },
+  "composer_usage": {
+    "model": "gpt-5.6-sol",
+    "response_id": "resp_0f4821c7b947c106016acba0f61de4819aa498a0e5ef93909a",
+    "input_tokens": 7708,
+    "output_tokens": 898,
+    "total_tokens": 8606,
+    "seconds": 38.97564630000852,
+    "model_calls": 1
+  },
+  "budget_omitted_excerpt_indices": []
+}

@@ -1,0 +1,302 @@
+{
+  "packet": {
+    "sender": "researcher",
+    "receiver": "coder",
+    "goal": "Fix this GitHub issue:\ndjango.utils.formats.get_format should allow lazy parameter\nDescription\n\t\nCommit [659d2421c7adb] (fixing #20296) triggered a regression when the date template filter (possibly others are affected too) receives a lazy string, like in some_date|date:_('Y-m-d').\nThis fails with: TypeError: getattr(): attribute name must be string in django.utils.formats.get_format.",
+    "constraints": [],
+    "decisions": [],
+    "evidence": [
+      {
+        "role": "assistant",
+        "content": "get_format() is the primary implementation point in django/utils/formats.py, around lines 100-143. format_type is used directly in the cache key, getattr(module, format_type), FORMAT_SETTINGS membership, and getattr(settings, format_type). A lazy translation proxy can therefore reach getattr() as a non-string and produce the reported TypeError.",
+        "kind": "evidence",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.brief_sources": [
+            "m5",
+            "m8"
+          ],
+          "handoff_sieve.brief_status": "observed",
+          "handoff_sieve.hybrid_item": "b0"
+        }
+      },
+      {
+        "role": "assistant",
+        "content": "The affected path is date_format() in django/utils/formats.py around line 158: its format argument is passed to get_format(). Other get_format() callers include form fields/widgets and i18n serialization, so compatibility beyond the date filter should be considered.",
+        "kind": "evidence",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.brief_sources": [
+            "m7",
+            "m8"
+          ],
+          "handoff_sieve.brief_status": "observed",
+          "handoff_sieve.hybrid_item": "b1"
+        }
+      },
+      {
+        "role": "tool",
+        "content": "100: def get_format(format_type, lang=None, use_l10n=None):\n101:     \"\"\"\n102:     For a specific format type, return the format for the current\n103:     language (locale). Default to the format in the settings.\n104:     format_type is the name of the format, e.g. 'DATE_FORMAT'.\n105: \n106:     If use_l10n is provided and is not None, it forces the value to\n107:     be localized (or not), overriding the value of settings.USE_L10N.\n108:     \"\"\"\n109:     if use_l10n is None:\n110:         try:\n111:             use_l10n = settings._USE_L10N_INTERNAL\n112:         except AttributeError:\n113:             use_l10n = settings.USE_L10N\n114:     if use_l10n and lang is None:\n115:         lang = get_language()\n116:     cache_key = (format_type, lang)\n117:     try:\n118:         return _format_cache[cache_key]\n119:     except KeyError:\n120:         pass\n121: \n122:     # The requested format_type has not been cached yet. Try to find it in any\n123:     # of the format_modules for the given lang if l10n is enabled. If it's not\n124:     # there or if l10n is disabled, fall back to the project settings.\n125:     val = None\n126:     if use_l10n:\n127:         for module in get_format_modules(lang):\n128:             val = getattr(module, format_type, None)\n129:             if val is not None:\n130:                 break\n131:     if val is None:\n132:         if format_type not in FORMAT_SETTINGS:\n133:             return format_type\n134:         val = getattr(settings, format_type)\n135:     elif format_type in ISO_INPUT_FORMATS:\n136:         # If a list of input formats from one of the format_modules was\n137:         # retrieved, make sure the ISO_INPUT_FORMATS are in this list.\n138:         val = list(val)\n139:         for iso_input in ISO_INPUT_FORMATS.get(format_type, ()):\n140:             if iso_input not in val:\n141:                 val.append(iso_input)\n142:     _format_cache[cache_key] = val\n143:     return val\n",
+        "kind": "evidence",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.excerpt_source": "m5",
+          "handoff_sieve.hybrid_item": "e0",
+          "handoff_sieve.excerpt_lines": [
+            102,
+            145
+          ]
+        }
+      },
+      {
+        "role": "tool",
+        "content": "js_tests/admin/core.test.js:74:     const format = django.get_format('DATE_INPUT_FORMATS')[0];\ntests/i18n/tests.py:555:                     date_format(some_datetime, format=get_format(\"DATETIME_FORMAT\")),\ntests/i18n/tests.py:559:                     date_format(some_date, format=get_format(\"YEAR_MONTH_FORMAT\")),\ntests/i18n/tests.py:562:                     \"14\", date_format(some_date, format=get_format(\"MONTH_DAY_FORMAT\"))\ntests/i18n/tests.py:566:                     date_format(some_date, format=get_format(\"SHORT_DATE_FORMAT\")),\ntests/i18n/tests.py:571:                         some_datetime, format=get_format(\"SHORT_DATETIME_FORMAT\")\ntests/i18n/tests.py:681:             self.assertEqual(\"N j, Y\", get_format(\"DATE_FORMAT\"))\ntests/i18n/tests.py:682:             self.assertEqual(0, get_format(\"FIRST_DAY_OF_WEEK\"))\ntests/i18n/tests.py:683:             self.assertEqual(\".\", get_format(\"DECIMAL_SEPARATOR\"))\ntests/i18n/tests.py:855:                 self.assertEqual(\"\\xa0\", get_format(\"THOUSAND_SEPARATOR\"))\ntests/i18n/tests.py:857:                 self.assertEqual(\"\\xa0\", get_format(\"THOUSAND_SEPARATOR\"))\ntests/i18n/tests.py:860:                 self.assertEqual(1, get_format(\"FIRST_DAY_OF_WEEK\"))\ntests/i18n/tests.py:862:                 self.assertEqual(1, get_format(\"FIRST_DAY_OF_WEEK\"))\ntests/i18n/tests.py:868:             self.assertEqual(r\"j E \\d\\e Y\", get_format(\"DATE_FORMAT\"))\ntests/i18n/tests.py:869:             self.assertEqual(1, get_format(\"FIRST_DAY_OF_WEEK\"))\ntests/i18n/tests.py:870:             self.assertEqual(\",\", get_format(\"DECIMAL_SEPARATOR\"))\ntests/i18n/tests.py:1153:             self.assertEqual(\"N j, Y\", get_format(\"DATE_FORMAT\"))\ntests/i18n/tests.py:1154:             self.assertEqual(0, get_format(\"FIRST_DAY_OF_WEEK\"))\ntests/i18n/tests.py:1155:             self.assertEqual(\".\", get_format(\"DECIMAL_SEPARATOR\"))\ntests/i18n/tests.py:1519:             self.assertEqual(\".\", get_format(\"DECIMAL_SEPARATOR\", lang=\"en\"))\ntests/i18n/tests.py:1653:         self.assertEqual(get_format(\"DEBUG\"), \"DEBUG\")\ntests/i18n/tests.py:1659:                 self.assertEqual(\"d/m/Y CUSTOM\", get_format(\"CUSTOM_DAY_FORMAT\"))\ntests/i18n/tests.py:1675:                     formatter = get_format(format_name, lang=language_code)[0]\n",
+        "kind": "evidence",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.excerpt_source": "m7",
+          "handoff_sieve.hybrid_item": "e1",
+          "handoff_sieve.excerpt_lines": [
+            37,
+            59
+          ]
+        }
+      }
+    ],
+    "completed_work": [
+      {
+        "role": "assistant",
+        "content": "get_format_lazy already wraps get_format(), but the underlying get_format() does not normalize arguments. Existing format tests are in tests/i18n/tests.py; date-filter coverage should be located by searching the template-filter tests.",
+        "kind": "completed_work",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.brief_sources": [
+            "m5",
+            "m7",
+            "m8"
+          ],
+          "handoff_sieve.brief_status": "observed",
+          "handoff_sieve.hybrid_item": "b2"
+        }
+      }
+    ],
+    "failed_attempts": [
+      {
+        "role": "assistant",
+        "content": "Investigation made no source edits and did not execute tests. No implementation or regression result has been independently verified.",
+        "kind": "failed_attempts",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.brief_sources": [
+            "m8",
+            "m9"
+          ],
+          "handoff_sieve.brief_status": "observed",
+          "handoff_sieve.hybrid_item": "b3"
+        }
+      }
+    ],
+    "pending_work": [
+      {
+        "role": "assistant",
+        "content": "[Proposed] Normalize format_type to a concrete string at the start of get_format() using the repository's established lazy-string coercion utility, while checking existing expectations for non-string/list format values. Add regression coverage for a lazy _('Y-m-d') date-filter argument and direct lazy input to get_format(), then verify cache keys and localized format-module lookup.",
+        "kind": "pending_work",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.brief_sources": [
+            "m5",
+            "m8"
+          ],
+          "handoff_sieve.brief_status": "proposed",
+          "handoff_sieve.hybrid_item": "b4"
+        }
+      },
+      {
+        "role": "assistant",
+        "content": "[Unverified] The sources do not report the exact existing date template-filter test file, the repository's preferred coercion utility, or any executed test command/results; these must be determined in the checkout before implementation is finalized.",
+        "kind": "pending_work",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.brief_sources": [
+            "m8"
+          ],
+          "handoff_sieve.brief_status": "uncertain",
+          "handoff_sieve.hybrid_item": "b5"
+        }
+      }
+    ],
+    "artifacts": [],
+    "tool_results": []
+  },
+  "report": {
+    "schema_version": "1",
+    "handoff_id": "a1edccac28b54266b9d7f3fbac99a2ea",
+    "request_id": null,
+    "started_at": "2026-10-11T14:47:24.018753Z",
+    "completed_at": "2026-10-11T14:47:24.022670Z",
+    "duration_ms": 3.9735999889671803,
+    "status": "passed",
+    "failure_code": null,
+    "failed_policy": null,
+    "sender": "researcher",
+    "receiver": "coder",
+    "token_counter": "approx_utf8",
+    "config_fingerprint": "25d92ff20a13c4a518eb72bcf5b459dc339afcbb759b23228ba47dcc35929eb2",
+    "original_tokens": 2024,
+    "transmitted_tokens": 2024,
+    "removed_messages": 0,
+    "redactions": 0,
+    "duplicates_removed": 0,
+    "protected_messages": 0,
+    "summarizer_input_tokens": 0,
+    "summarizer_output_tokens": 0,
+    "summarizer_provider_input_tokens": null,
+    "summarizer_provider_output_tokens": null,
+    "events": [
+      {
+        "policy": "receiver_contract",
+        "policy_version": "1",
+        "action": "compiled",
+        "count": 0,
+        "details": {
+          "max_tokens": 4000,
+          "packet_tokens": 1989,
+          "required_tokens": 1989,
+          "preferred_omitted_for_budget": {}
+        }
+      },
+      {
+        "policy": "hybrid_composer",
+        "policy_version": "1",
+        "action": "composed",
+        "count": 6,
+        "details": {
+          "model_calls": 1,
+          "semantic_claims_verified": false
+        }
+      }
+    ],
+    "warnings": []
+  },
+  "source_tokens": 6194,
+  "packet_tokens": 1989,
+  "omitted_count": 0,
+  "budget": {
+    "stage": "pipeline_output",
+    "token_counter": "approx_utf8",
+    "max_tokens": 4000,
+    "required_tokens": 1989,
+    "packet_tokens": 1989,
+    "preferred_selected": {},
+    "preferred_omitted_before_pipeline": {},
+    "preferred_omitted_after_pipeline": {}
+  },
+  "plan": {
+    "brief": [
+      {
+        "section": "evidence",
+        "content": "get_format() is the primary implementation point in django/utils/formats.py, around lines 100-143. format_type is used directly in the cache key, getattr(module, format_type), FORMAT_SETTINGS membership, and getattr(settings, format_type). A lazy translation proxy can therefore reach getattr() as a non-string and produce the reported TypeError.",
+        "source_ids": [
+          "m5",
+          "m8"
+        ],
+        "need_indices": [
+          0,
+          1
+        ],
+        "status": "observed"
+      },
+      {
+        "section": "evidence",
+        "content": "The affected path is date_format() in django/utils/formats.py around line 158: its format argument is passed to get_format(). Other get_format() callers include form fields/widgets and i18n serialization, so compatibility beyond the date filter should be considered.",
+        "source_ids": [
+          "m7",
+          "m8"
+        ],
+        "need_indices": [
+          0,
+          1
+        ],
+        "status": "observed"
+      },
+      {
+        "section": "completed_work",
+        "content": "get_format_lazy already wraps get_format(), but the underlying get_format() does not normalize arguments. Existing format tests are in tests/i18n/tests.py; date-filter coverage should be located by searching the template-filter tests.",
+        "source_ids": [
+          "m5",
+          "m7",
+          "m8"
+        ],
+        "need_indices": [
+          0,
+          1
+        ],
+        "status": "observed"
+      },
+      {
+        "section": "failed_attempts",
+        "content": "Investigation made no source edits and did not execute tests. No implementation or regression result has been independently verified.",
+        "source_ids": [
+          "m8",
+          "m9"
+        ],
+        "need_indices": [
+          1
+        ],
+        "status": "observed"
+      },
+      {
+        "section": "pending_work",
+        "content": "Normalize format_type to a concrete string at the start of get_format() using the repository's established lazy-string coercion utility, while checking existing expectations for non-string/list format values. Add regression coverage for a lazy _('Y-m-d') date-filter argument and direct lazy input to get_format(), then verify cache keys and localized format-module lookup.",
+        "source_ids": [
+          "m5",
+          "m8"
+        ],
+        "need_indices": [
+          0,
+          1
+        ],
+        "status": "proposed"
+      },
+      {
+        "section": "pending_work",
+        "content": "The sources do not report the exact existing date template-filter test file, the repository's preferred coercion utility, or any executed test command/results; these must be determined in the checkout before implementation is finalized.",
+        "source_ids": [
+          "m8"
+        ],
+        "need_indices": [
+          0,
+          1
+        ],
+        "status": "uncertain"
+      }
+    ],
+    "excerpts": [
+      {
+        "source_id": "m5",
+        "section": "evidence",
+        "start_line": 102,
+        "end_line": 145,
+        "essential": true
+      },
+      {
+        "source_id": "m7",
+        "section": "evidence",
+        "start_line": 37,
+        "end_line": 59,
+        "essential": false
+      }
+    ],
+    "missing_needs": []
+  },
+  "composer_usage": {
+    "model": "gpt-5.6-sol",
+    "response_id": "resp_06f23229587a5ea2016acba11d63d8819b9c9f51bf12939d7d",
+    "input_tokens": 9226,
+    "output_tokens": 832,
+    "total_tokens": 10058,
+    "seconds": 96.40664659999311,
+    "model_calls": 1
+  },
+  "budget_omitted_excerpt_indices": []
+}
