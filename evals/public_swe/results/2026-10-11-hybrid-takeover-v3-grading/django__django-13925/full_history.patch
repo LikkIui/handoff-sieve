@@ -1,0 +1,29 @@
+diff --git a/django/db/models/base.py b/django/db/models/base.py
+index 4038859..d641fb2 100644
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -1299,6 +1299,7 @@ class Model(metaclass=ModelBase):
+     def _check_default_pk(cls):
+         if (
+             cls._meta.pk.auto_created and
++            not (cls._meta.pk.remote_field and cls._meta.pk.remote_field.parent_link) and
+             not settings.is_overridden('DEFAULT_AUTO_FIELD') and
+             not cls._meta.app_config._is_default_auto_field_overridden
+         ):
+diff --git a/tests/check_framework/test_model_checks.py b/tests/check_framework/test_model_checks.py
+index d4342ad..344022a 100644
+--- a/tests/check_framework/test_model_checks.py
++++ b/tests/check_framework/test_model_checks.py
+@@ -415,3 +415,12 @@ class ModelDefaultAutoFieldTests(SimpleTestCase):
+                 app_label = 'check_framework.apps.CheckPKConfig'
+ 
+         self.assertEqual(checks.run_checks(app_configs=apps.get_app_configs()), [])
++
++    def test_inherited_manual_pk(self):
++        class Parent(models.Model):
++            id = models.BigAutoField(primary_key=True)
++
++        class Child(Parent):
++            pass
++
++        self.assertEqual(checks.run_checks(app_configs=self.apps.get_app_configs()), [])
