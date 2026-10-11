@@ -1,0 +1,37 @@
+diff --git a/django/db/migrations/state.py b/django/db/migrations/state.py
+index 088f5c4..b62a016 100644
+--- a/django/db/migrations/state.py
++++ b/django/db/migrations/state.py
+@@ -91,10 +91,11 @@ class ProjectState:
+     def __init__(self, models=None, real_apps=None):
+         self.models = models or {}
+         # Apps to include from main registry, usually unmigrated ones
+-        if real_apps:
+-            self.real_apps = real_apps if isinstance(real_apps, set) else set(real_apps)
+-        else:
++        if real_apps is None:
+             self.real_apps = set()
++        else:
++            assert isinstance(real_apps, set)
++            self.real_apps = real_apps
+         self.is_delayed = False
+         # {remote_model_key: {model_key: [(field_name, field)]}}
+         self.relations = None
+diff --git a/tests/migrations/test_state.py b/tests/migrations/test_state.py
+index 01ffc48..c0463a3 100644
+--- a/tests/migrations/test_state.py
++++ b/tests/migrations/test_state.py
+@@ -895,6 +895,13 @@ class StateTests(SimpleTestCase):
+         project_state.add_model(ModelState.from_model(Magazine))
+         self.assertEqual(len(project_state.apps.get_models()), 3)
+ 
++    def test_real_apps_must_be_set(self):
++        real_apps = set()
++        project_state = ProjectState(real_apps=real_apps)
++        self.assertIs(project_state.real_apps, real_apps)
++        with self.assertRaises(AssertionError):
++            ProjectState(real_apps=[])
++
+     def test_real_apps(self):
+         """
+         Including real apps can resolve dangling FK errors.

@@ -1,0 +1,327 @@
+{
+  "packet": {
+    "sender": "researcher",
+    "receiver": "coder",
+    "goal": "Fix this GitHub issue:\nProjectState.__init__() can assume its real_apps argument is a set\nDescription\n\t\n​PR #14760 made all calls to ProjectState.__init__() pass real_apps as a set. In ​ProjectState.__init__() now, then, instead of checking that real_apps is a set and converting it to a set if not, it can just assert that it's a set when non-None. (Presumably the construction of new ProjectState objects is part of Django's internal API.) I had made this comment on the PR, but it wasn't important enough to hold up the PR because another PR was depending on it getting merged.",
+    "constraints": [],
+    "decisions": [],
+    "evidence": [
+      {
+        "role": "tool",
+        "content": "Executed read django/db/migrations/state.py:\nFile: django/db/migrations/state.py (824 lines)\n70:     however, that a model inheriting from a concrete model is also related to\n71:     its superclass through the implicit *_ptr OneToOneField on the subclass.\n72:     \"\"\"\n73:     seen = set()\n74:     queue = _get_related_models(model)\n75:     for rel_mod in queue:\n76:         rel_app_label, rel_model_name = rel_mod._meta.app_label, rel_mod._meta.model_name\n77:         if (rel_app_label, rel_model_name) in seen:\n78:             continue\n79:         seen.add((rel_app_label, rel_model_name))\n80:         queue.extend(_get_related_models(rel_mod))\n81:     return seen - {(model._meta.app_label, model._meta.model_name)}\n82: \n83: \n84: class ProjectState:\n85:     \"\"\"\n86:     Represent the entire project's overall state. This is the item that is\n87:     passed around - do it here rather than at the app level so that cross-app\n88:     FKs/etc. resolve properly.\n89:     \"\"\"\n90: \n91:     def __init__(self, models=None, real_apps=None):\n92:         self.models = models or {}\n93:         # Apps to include from main registry, usually unmigrated ones\n94:         if real_apps:\n95:             self.real_apps = real_apps if isinstance(real_apps, set) else set(real_apps)\n96:         else:\n97:             self.real_apps = set()\n98:         self.is_delayed = False\n99:         # {remote_model_key: {model_key: [(field_name, field)]}}\n100:         self.relations = None\n101: \n102:     def add_model(self, model_state):\n103:         app_label, model_name = model_state.app_label, model_state.name_lower\n104:         self.models[(app_label, model_name)] = model_state\n105:         if 'apps' in self.__dict__:  # hasattr would cache the property\n106:             self.reload_model(app_label, model_name)\n107: \n",
+        "kind": "evidence",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.source_id": "m3.0",
+          "handoff_sieve.source_ids": [
+            "m3.0",
+            "m3.1"
+          ]
+        }
+      },
+      {
+        "role": "tool",
+        "content": "Executed read django/db/migrations/state.py:\nFile: django/db/migrations/state.py (824 lines)\n390:                 proxy_models[model_key] = model_state\n391:                 # Find a concrete model for the proxy.\n392:                 concrete_models_mapping[model_key] = self._find_concrete_model_from_proxy(\n393:                     proxy_models, model_state,\n394:                 )\n395:             else:\n396:                 concrete_models_mapping[model_key] = model_key\n397:         return concrete_models_mapping, proxy_models\n398: \n399:     def _find_concrete_model_from_proxy(self, proxy_models, model_state):\n400:         for base in model_state.bases:\n401:             base_key = make_model_tuple(base)\n402:             base_state = proxy_models.get(base_key)\n403:             if not base_state:\n404:                 # Concrete model found, stop looking at bases.\n405:                 return base_key\n406:             return self._find_concrete_model_from_proxy(proxy_models, base_state)\n407: \n408:     def clone(self):\n409:         \"\"\"Return an exact copy of this ProjectState.\"\"\"\n410:         new_state = ProjectState(\n411:             models={k: v.clone() for k, v in self.models.items()},\n412:             real_apps=self.real_apps,\n413:         )\n414:         if 'apps' in self.__dict__:\n415:             new_state.apps = self.apps.clone()\n416:         new_state.is_delayed = self.is_delayed\n417:         return new_state\n418: \n419:     def clear_delayed_apps_cache(self):\n420:         if self.is_delayed and 'apps' in self.__dict__:\n421:             del self.__dict__['apps']\n422: \n423:     @cached_property\n424:     def apps(self):\n425:         return StateApps(self.real_apps, self.models)\n426: \n",
+        "kind": "evidence",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.source_id": "m7.0",
+          "handoff_sieve.source_ids": [
+            "m7.0",
+            "m7.1"
+          ]
+        }
+      },
+      {
+        "role": "tool",
+        "content": "Executed read django/db/migrations/graph.py:\nFile: django/db/migrations/graph.py (319 lines)\n285:     def __repr__(self):\n286:         nodes, edges = self._nodes_and_edges()\n287:         return '<%s: nodes=%s, edges=%s>' % (self.__class__.__name__, nodes, edges)\n288: \n289:     def _nodes_and_edges(self):\n290:         return len(self.nodes), sum(len(node.parents) for node in self.node_map.values())\n291: \n292:     def _generate_plan(self, nodes, at_end):\n293:         plan = []\n294:         for node in nodes:\n295:             for migration in self.forwards_plan(node):\n296:                 if migration not in plan and (at_end or migration not in nodes):\n297:                     plan.append(migration)\n298:         return plan\n299: \n300:     def make_state(self, nodes=None, at_end=True, real_apps=None):\n301:         \"\"\"\n302:         Given a migration node or nodes, return a complete ProjectState for it.\n303:         If at_end is False, return the state before the migration has run.\n304:         If nodes is not provided, return the overall most current project state.\n305:         \"\"\"\n306:         if nodes is None:\n307:             nodes = list(self.leaf_nodes())\n308:         if not nodes:\n309:             return ProjectState()\n310:         if not isinstance(nodes[0], tuple):\n311:             nodes = [nodes]\n312:         plan = self._generate_plan(nodes, at_end)\n313:         project_state = ProjectState(real_apps=real_apps)\n314:         for node in plan:\n315:             project_state = self.nodes[node].mutate_state(project_state, preserve=False)\n316:         return project_state\n317: \n318:     def __contains__(self, node):\n319:         return node in self.nodes",
+        "kind": "evidence",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.source_id": "m9.0",
+          "handoff_sieve.source_ids": [
+            "m9.0",
+            "m9.1"
+          ]
+        }
+      },
+      {
+        "role": "tool",
+        "content": "Executed read django/db/migrations/executor.py:\nFile: django/db/migrations/executor.py (372 lines)\n55:                             plan.append((self.loader.graph.nodes[migration], True))\n56:                             applied.pop(migration)\n57:             else:\n58:                 for migration in self.loader.graph.forwards_plan(target):\n59:                     if migration not in applied:\n60:                         plan.append((self.loader.graph.nodes[migration], False))\n61:                         applied[migration] = self.loader.graph.nodes[migration]\n62:         return plan\n63: \n64:     def _create_project_state(self, with_applied_migrations=False):\n65:         \"\"\"\n66:         Create a project state including all the applications without\n67:         migrations and applied migrations if with_applied_migrations=True.\n68:         \"\"\"\n69:         state = ProjectState(real_apps=self.loader.unmigrated_apps)\n70:         if with_applied_migrations:\n71:             # Create the forwards plan Django would follow on an empty database\n72:             full_plan = self.migration_plan(self.loader.graph.leaf_nodes(), clean_start=True)\n73:             applied_migrations = {\n74:                 self.loader.graph.nodes[key] for key in self.loader.applied_migrations\n75:                 if key in self.loader.graph.nodes\n76:             }\n77:             for migration, _ in full_plan:\n78:                 if migration in applied_migrations:\n79:                     migration.mutate_state(state, preserve=False)\n80:         return state\n81: \n82:     def migrate(self, targets, plan=None, state=None, fake=False, fake_initial=False):",
+        "kind": "evidence",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.source_id": "m11.0",
+          "handoff_sieve.source_ids": [
+            "m11.0",
+            "m11.1"
+          ]
+        }
+      }
+    ],
+    "completed_work": [],
+    "failed_attempts": [],
+    "pending_work": [
+      {
+        "role": "assistant",
+        "content": "{\"end\":0,\"new\":\"\",\"note\":\"Relevant implementation: django/db/migrations/state.py:91-98 currently accepts any truthy iterable and converts non-sets via set(), while falsy/None becomes an empty set. Issue requests preserving None/empty behavior but asserting the internal contract for non-None real_apps: replace the conversion conditional with an assertion that real_apps is a set, then assign it (likely `assert isinstance(real_apps, set)` under the `if real_apps is not None`/truthy guard, or equivalent preserving empty-set behavior). Callers observed: executor.py:69 passes loader.unmigrated_apps; graph.py:313 forwards its real_apps argument; state.py:410-413 clone passes self.real_apps; graph.py:309 constructs with no argument. These are all consistent with sets/None in the inspected code. `ProjectState.apps` passes self.real_apps to StateApps at state.py:423-425, so retaining the same set object is relevant to clone/state behavior. Existing tests use no argument or a set (tests/auth_tests/test_management.py:1134, tests/migrations/test_state.py:919); no non-set caller was found by literal search. Caveat: the issue wording says assert when non-None, whereas current `if real_apps:` skips validation for falsy non-set values; decide whether exact intended patch is `if real_apps is not None: assert isinstance(real_apps, set); self.real_apps = real_apps` (which would retain an empty set) versus minimal truthy-path change. Recommended coder work: edit only ProjectState.__init__, add/adjust focused tests in tests/migrations/test_state.py for set identity and non-set rejection if repository conventions support it. Worth checking the migration state test class around line 919 and any project test policy; source-only agent cannot run tests. Original tests to run upstream: migrations state tests, especially tests/migrations/test_state.py, plus migration executor/graph tests.\",\"old\":\"\",\"operation\":\"finish\",\"path\":\"\",\"query\":\"\",\"start\":0}",
+        "kind": "pending_work",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.source_id": "m12.0"
+        }
+      }
+    ],
+    "artifacts": [],
+    "tool_results": []
+  },
+  "report": {
+    "schema_version": "1",
+    "handoff_id": "da1b8ac3b4f946df87f02986118d58f3",
+    "request_id": null,
+    "started_at": "2026-10-11T06:24:26.666517Z",
+    "completed_at": "2026-10-11T06:24:26.669266Z",
+    "duration_ms": 2.7695000171661377,
+    "status": "passed",
+    "failure_code": null,
+    "failed_policy": null,
+    "sender": "researcher",
+    "receiver": "coder",
+    "token_counter": "approx_utf8",
+    "config_fingerprint": "25d92ff20a13c4a518eb72bcf5b459dc339afcbb759b23228ba47dcc35929eb2",
+    "original_tokens": 2616,
+    "transmitted_tokens": 2616,
+    "removed_messages": 0,
+    "redactions": 0,
+    "duplicates_removed": 0,
+    "protected_messages": 0,
+    "summarizer_input_tokens": 0,
+    "summarizer_output_tokens": 0,
+    "summarizer_provider_input_tokens": null,
+    "summarizer_provider_output_tokens": null,
+    "events": [
+      {
+        "policy": "receiver_contract",
+        "policy_version": "1",
+        "action": "compiled",
+        "count": 0,
+        "details": {
+          "max_tokens": 4000,
+          "packet_tokens": 2604,
+          "required_tokens": 2604,
+          "preferred_omitted_for_budget": {}
+        }
+      },
+      {
+        "policy": "model_selector",
+        "policy_version": "1",
+        "action": "selected",
+        "count": 9,
+        "details": {
+          "source_units": 97,
+          "model_calls": 1
+        }
+      }
+    ],
+    "warnings": []
+  },
+  "source_tokens": 5105,
+  "packet_tokens": 2604,
+  "omitted_count": 88,
+  "budget": {
+    "stage": "pipeline_output",
+    "token_counter": "approx_utf8",
+    "max_tokens": 4000,
+    "required_tokens": 2604,
+    "packet_tokens": 2604,
+    "preferred_selected": {},
+    "preferred_omitted_before_pipeline": {},
+    "preferred_omitted_after_pipeline": {}
+  },
+  "selection": {
+    "source_unit_count": 97,
+    "selected_source_ids": [
+      "m3.0",
+      "m3.1",
+      "m12.0",
+      "m9.0",
+      "m9.1",
+      "m11.0",
+      "m11.1",
+      "m7.0",
+      "m7.1"
+    ],
+    "budget_omitted_source_ids": [],
+    "unselected_source_ids": [
+      "m0.0",
+      "m1.0",
+      "m1.1",
+      "m2.0",
+      "m3.2",
+      "m4.0",
+      "m5.0",
+      "m5.1",
+      "m5.2",
+      "m5.3",
+      "m5.4",
+      "m5.5",
+      "m5.6",
+      "m5.7",
+      "m5.8",
+      "m5.9",
+      "m5.10",
+      "m5.11",
+      "m5.12",
+      "m5.13",
+      "m5.14",
+      "m5.15",
+      "m5.16",
+      "m5.17",
+      "m5.18",
+      "m5.19",
+      "m5.20",
+      "m5.21",
+      "m5.22",
+      "m5.23",
+      "m5.24",
+      "m5.25",
+      "m5.26",
+      "m5.27",
+      "m5.28",
+      "m5.29",
+      "m5.30",
+      "m5.31",
+      "m5.32",
+      "m5.33",
+      "m5.34",
+      "m5.35",
+      "m5.36",
+      "m5.37",
+      "m5.38",
+      "m5.39",
+      "m5.40",
+      "m5.41",
+      "m5.42",
+      "m5.43",
+      "m5.44",
+      "m5.45",
+      "m5.46",
+      "m5.47",
+      "m5.48",
+      "m5.49",
+      "m5.50",
+      "m5.51",
+      "m5.52",
+      "m5.53",
+      "m5.54",
+      "m5.55",
+      "m5.56",
+      "m5.57",
+      "m5.58",
+      "m5.59",
+      "m5.60",
+      "m5.61",
+      "m5.62",
+      "m5.63",
+      "m5.64",
+      "m5.65",
+      "m5.66",
+      "m5.67",
+      "m5.68",
+      "m5.69",
+      "m5.70",
+      "m5.71",
+      "m5.72",
+      "m5.73",
+      "m5.74",
+      "m5.75",
+      "m6.0",
+      "m7.2",
+      "m8.0",
+      "m10.0",
+      "m13.0",
+      "m13.1"
+    ],
+    "coverage": [
+      {
+        "need_index": 0,
+        "source_ids": [
+          "m3.1",
+          "m9.1",
+          "m11.1",
+          "m7.1"
+        ]
+      },
+      {
+        "need_index": 1,
+        "source_ids": [
+          "m12.0",
+          "m7.1"
+        ]
+      }
+    ],
+    "context_source_ids": [
+      "m3.0",
+      "m9.0",
+      "m11.0",
+      "m7.0"
+    ]
+  },
+  "plan": {
+    "selections": [
+      {
+        "source_id": "m3.1",
+        "section": "evidence",
+        "essential": true
+      },
+      {
+        "source_id": "m12.0",
+        "section": "pending_work",
+        "essential": true
+      },
+      {
+        "source_id": "m9.1",
+        "section": "evidence",
+        "essential": true
+      },
+      {
+        "source_id": "m11.1",
+        "section": "evidence",
+        "essential": true
+      },
+      {
+        "source_id": "m7.1",
+        "section": "evidence",
+        "essential": true
+      }
+    ],
+    "coverage": [
+      {
+        "need_index": 0,
+        "source_ids": [
+          "m3.1",
+          "m9.1",
+          "m11.1",
+          "m7.1"
+        ]
+      },
+      {
+        "need_index": 1,
+        "source_ids": [
+          "m12.0",
+          "m7.1"
+        ]
+      }
+    ],
+    "missing_needs": []
+  },
+  "selector_usage": {
+    "model": "gpt-5.6-sol",
+    "response_id": "resp_0b603adc496e0a7d016acb2b76694081999878228025b0afc3",
+    "input_tokens": 7277,
+    "output_tokens": 537,
+    "total_tokens": 7814,
+    "seconds": 37.80168389994651,
+    "model_calls": 1
+  }
+}

@@ -1,0 +1,223 @@
+{
+  "packet": {
+    "sender": "researcher",
+    "receiver": "coder",
+    "goal": "Fix this GitHub issue:\ndjango.utils.http.parse_http_date two digit year check is incorrect\nDescription\n\t \n\t\t(last modified by Ad Timmering)\n\t \nRFC 850 does not mention this, but in RFC 7231 (and there's something similar in RFC 2822), there's the following quote:\nRecipients of a timestamp value in rfc850-date format, which uses a\ntwo-digit year, MUST interpret a timestamp that appears to be more\nthan 50 years in the future as representing the most recent year in\nthe past that had the same last two digits.\nCurrent logic is hard coded to consider 0-69 to be in 2000-2069, and 70-99 to be 1970-1999, instead of comparing versus the current year.",
+    "constraints": [],
+    "decisions": [],
+    "evidence": [
+      {
+        "role": "tool",
+        "content": "Executed read django/utils/http.py:\nFile: django/utils/http.py (474 lines)\n130:                 for item in itr:\n131:                     if item is None:\n132:                         raise TypeError(\n133:                             \"Cannot encode None for key '%s' in a query \"\n134:                             \"string. Did you mean to pass an empty string or \"\n135:                             \"omit the value?\" % key\n136:                         )\n137:                     elif not isinstance(item, bytes):\n138:                         item = str(item)\n139:                     query_val.append(item)\n140:         query_params.append((key, query_val))\n141:     return original_urlencode(query_params, doseq)\n142: \n143: \n144: def http_date(epoch_seconds=None):\n145:     \"\"\"\n146:     Format the time to match the RFC1123 date format as specified by HTTP\n147:     RFC7231 section 7.1.1.1.\n148: \n149:     `epoch_seconds` is a floating point number expressed in seconds since the\n150:     epoch, in UTC - such as that outputted by time.time(). If set to None, it\n151:     defaults to the current time.\n152: \n153:     Output a string in the format 'Wdy, DD Mon YYYY HH:MM:SS GMT'.\n154:     \"\"\"\n155:     return formatdate(epoch_seconds, usegmt=True)\n156: \n157: \n158: def parse_http_date(date):\n159:     \"\"\"\n160:     Parse a date format as specified by HTTP RFC7231 section 7.1.1.1.\n161: \n162:     The three formats allowed by the RFC are accepted, even if only the first\n163:     one is still in widespread use.\n164: \n165:     Return an integer expressed in seconds since the epoch, in UTC.\n166:     \"\"\"\n167:     # email.utils.parsedate() does the job for RFC1123 dates; unfortunately\n168:     # RFC7231 makes it mandatory to support RFC850 dates too. So we roll\n169:     # our own RFC-compliant parsing.\n170:     for regex in RFC1123_DATE, RFC850_DATE, ASCTIME_DATE:\n171:         m = regex.match(date)\n172:         if m is not None:\n173:             break\n174:     else:\n175:         raise ValueError(\"%r is not in a valid HTTP date format\" % date)\n176:     try:\n177:         year = int(m.group('year'))\n178:         if year < 100:\n179:             if year < 70:\n180:                 year += 2000\n181:             else:\n182:                 year += 1900\n183:         month = MONTHS.index(m.group('mon').lower()) + 1\n184:         day = int(m.group('day'))\n185:         hour = int(m.group('hour'))\n186:         min = int(m.group('min'))\n187:         sec = int(m.group('sec'))\n188:         result = datetime.datetime(year, month, day, hour, min, sec)\n189:         return calendar.timegm(result.utctimetuple())\n190:     except Exception as exc:\n191:         raise ValueError(\"%r is not a valid date\" % date) from exc\n192: \n193: \n194: def parse_http_date_safe(date):\n195:     \"\"\"\n196:     Same as parse_http_date, but return None if the input is invalid.\n197:     \"\"\"\n198:     try:\n199:         return parse_http_date(date)\n200:     except Exception:\n201:         pass\n202: \n203: \n",
+        "kind": "evidence",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.source_id": "m3.0",
+          "handoff_sieve.source_ids": [
+            "m3.0",
+            "m3.1",
+            "m3.2"
+          ]
+        }
+      },
+      {
+        "role": "tool",
+        "content": "Executed read tests/utils_tests/test_http.py:\nFile: tests/utils_tests/test_http.py (340 lines)\n295:         self.assertEqual(\n296:             parse_etags(r'\"\" ,  \"etag\", \"e\\\\tag\", W/\"weak\"'),\n297:             ['\"\"', '\"etag\"', r'\"e\\\\tag\"', 'W/\"weak\"']\n298:         )\n299:         self.assertEqual(parse_etags('*'), ['*'])\n300: \n301:         # Ignore RFC 2616 ETags that are invalid according to RFC 7232.\n302:         self.assertEqual(parse_etags(r'\"etag\", \"e\\\"t\\\"ag\"'), ['\"etag\"'])\n303: \n304:     def test_quoting(self):\n305:         self.assertEqual(quote_etag('etag'), '\"etag\"')  # unquoted\n306:         self.assertEqual(quote_etag('\"etag\"'), '\"etag\"')  # quoted\n307:         self.assertEqual(quote_etag('W/\"etag\"'), 'W/\"etag\"')  # quoted, weak\n308: \n309: \n310: class HttpDateProcessingTests(unittest.TestCase):\n311:     def test_http_date(self):\n312:         t = 1167616461.0\n313:         self.assertEqual(http_date(t), 'Mon, 01 Jan 2007 01:54:21 GMT')\n314: \n315:     def test_parsing_rfc1123(self):\n316:         parsed = parse_http_date('Sun, 06 Nov 1994 08:49:37 GMT')\n317:         self.assertEqual(datetime.utcfromtimestamp(parsed), datetime(1994, 11, 6, 8, 49, 37))\n318: \n319:     def test_parsing_rfc850(self):\n320:         parsed = parse_http_date('Sunday, 06-Nov-94 08:49:37 GMT')\n321:         self.assertEqual(datetime.utcfromtimestamp(parsed), datetime(1994, 11, 6, 8, 49, 37))\n322: \n323:     def test_parsing_asctime(self):\n324:         parsed = parse_http_date('Sun Nov  6 08:49:37 1994')\n325:         self.assertEqual(datetime.utcfromtimestamp(parsed), datetime(1994, 11, 6, 8, 49, 37))\n326: \n327:     def test_parsing_year_less_than_70(self):\n328:         parsed = parse_http_date('Sun Nov  6 08:49:37 0037')\n329:         self.assertEqual(datetime.utcfromtimestamp(parsed), datetime(2037, 11, 6, 8, 49, 37))\n330: \n331: \n",
+        "kind": "evidence",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.source_id": "m5.0",
+          "handoff_sieve.source_ids": [
+            "m5.0",
+            "m5.1"
+          ]
+        }
+      }
+    ],
+    "completed_work": [],
+    "failed_attempts": [],
+    "pending_work": [
+      {
+        "role": "assistant",
+        "content": "{\"end\":0,\"new\":\"\",\"note\":\"Investigation complete: parse_http_date() in django/utils/http.py lines 158-191 hard-codes 00-69 to 2000-2069 and 70-99 to 1970-1999. RFC behavior should derive a candidate two-digit year in the current century, then subtract 100 years when that candidate is more than 50 years ahead of the current year (strictly >50). For example, with current year 2025, 94 resolves to 1994 while 37 resolves to 2037. Existing coverage is tests/utils_tests/test_http.py lines 319-329: RFC850 94 expects 1994 and a four-digit 0037 case expects 2037; add boundary-focused two-digit RFC850 tests and control current time/year to avoid tests changing over time. Relevant callers use parse_http_date_safe() in middleware/cache and parse_http_date() in static views, so invalid-date behavior should remain unchanged. No source edit made because this is a research handoff; coder should update the year conversion and tests. Unverified: exact project-supported mocking convention and desired boundary fixture should be checked before editing; upstream HTTP utility tests should be run after implementation.\",\"old\":\"\",\"operation\":\"finish\",\"path\":\"\" ,\"query\":\"\",\"start\":0}",
+        "kind": "pending_work",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.source_id": "m8.0"
+        }
+      }
+    ],
+    "artifacts": [],
+    "tool_results": []
+  },
+  "report": {
+    "schema_version": "1",
+    "handoff_id": "bf0e291fbd0343c5a2729917c5137e5d",
+    "request_id": null,
+    "started_at": "2026-10-11T06:05:53.972868Z",
+    "completed_at": "2026-10-11T06:05:53.974206Z",
+    "duration_ms": 1.387599972076714,
+    "status": "passed",
+    "failure_code": null,
+    "failed_policy": null,
+    "sender": "researcher",
+    "receiver": "coder",
+    "token_counter": "approx_utf8",
+    "config_fingerprint": "25d92ff20a13c4a518eb72bcf5b459dc339afcbb759b23228ba47dcc35929eb2",
+    "original_tokens": 1858,
+    "transmitted_tokens": 1858,
+    "removed_messages": 0,
+    "redactions": 0,
+    "duplicates_removed": 0,
+    "protected_messages": 0,
+    "summarizer_input_tokens": 0,
+    "summarizer_output_tokens": 0,
+    "summarizer_provider_input_tokens": null,
+    "summarizer_provider_output_tokens": null,
+    "events": [
+      {
+        "policy": "receiver_contract",
+        "policy_version": "1",
+        "action": "compiled",
+        "count": 0,
+        "details": {
+          "max_tokens": 4000,
+          "packet_tokens": 1858,
+          "required_tokens": 1858,
+          "preferred_omitted_for_budget": {}
+        }
+      },
+      {
+        "policy": "model_selector",
+        "policy_version": "1",
+        "action": "selected",
+        "count": 6,
+        "details": {
+          "source_units": 33,
+          "model_calls": 1
+        }
+      }
+    ],
+    "warnings": []
+  },
+  "source_tokens": 2957,
+  "packet_tokens": 1858,
+  "omitted_count": 27,
+  "budget": {
+    "stage": "pipeline_output",
+    "token_counter": "approx_utf8",
+    "max_tokens": 4000,
+    "required_tokens": 1858,
+    "packet_tokens": 1858,
+    "preferred_selected": {},
+    "preferred_omitted_before_pipeline": {},
+    "preferred_omitted_after_pipeline": {}
+  },
+  "selection": {
+    "source_unit_count": 33,
+    "selected_source_ids": [
+      "m3.0",
+      "m3.1",
+      "m3.2",
+      "m8.0",
+      "m5.0",
+      "m5.1"
+    ],
+    "budget_omitted_source_ids": [],
+    "unselected_source_ids": [
+      "m0.0",
+      "m1.0",
+      "m1.1",
+      "m1.2",
+      "m1.3",
+      "m1.4",
+      "m1.5",
+      "m1.6",
+      "m1.7",
+      "m1.8",
+      "m1.9",
+      "m1.10",
+      "m1.11",
+      "m1.12",
+      "m1.13",
+      "m1.14",
+      "m1.15",
+      "m1.16",
+      "m2.0",
+      "m3.3",
+      "m4.0",
+      "m5.2",
+      "m6.0",
+      "m7.0",
+      "m7.1",
+      "m9.0",
+      "m9.1"
+    ],
+    "coverage": [
+      {
+        "need_index": 0,
+        "source_ids": [
+          "m3.2",
+          "m5.1"
+        ]
+      },
+      {
+        "need_index": 1,
+        "source_ids": [
+          "m8.0",
+          "m5.1"
+        ]
+      }
+    ],
+    "context_source_ids": [
+      "m3.0",
+      "m3.1",
+      "m5.0"
+    ]
+  },
+  "plan": {
+    "selections": [
+      {
+        "source_id": "m3.2",
+        "section": "evidence",
+        "essential": true
+      },
+      {
+        "source_id": "m8.0",
+        "section": "pending_work",
+        "essential": true
+      },
+      {
+        "source_id": "m5.1",
+        "section": "evidence",
+        "essential": true
+      }
+    ],
+    "coverage": [
+      {
+        "need_index": 0,
+        "source_ids": [
+          "m3.2",
+          "m5.1"
+        ]
+      },
+      {
+        "need_index": 1,
+        "source_ids": [
+          "m8.0",
+          "m5.1"
+        ]
+      }
+    ],
+    "missing_needs": []
+  },
+  "selector_usage": {
+    "model": "gpt-5.6-sol",
+    "response_id": "resp_07e0a45667e8ada9016acb273778a4819b98c9b83781f1d760",
+    "input_tokens": 4792,
+    "output_tokens": 440,
+    "total_tokens": 5232,
+    "seconds": 16.169628100004047,
+    "model_calls": 1
+  }
+}

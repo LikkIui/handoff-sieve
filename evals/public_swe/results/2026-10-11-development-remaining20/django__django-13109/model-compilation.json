@@ -1,0 +1,265 @@
+{
+  "packet": {
+    "sender": "researcher",
+    "receiver": "coder",
+    "goal": "Fix this GitHub issue:\nForeignKey.validate() should validate using the base manager.\nDescription\n\t\nForeignKey.validate() should validate using the base manager instead of the default manager.\nConsider the models:\nclass ArticleManager(models.Manage):\n\tdef get_queryset(self):\n\t\tqs = super().get_queryset()\n\t\treturn qs.filter(archived=False)\nclass Article(models.Model):\n\ttitle = models.CharField(max_length=100)\n\tarchived = models.BooleanField(default=False)\n\t# Don't include archived articles by default.\n\tobjects = ArticleManager()\nclass FavoriteAricles(models.Model):\n\tarticle = models.ForeignKey(Article, on_delete=models.CASCADE)\nIn the example, now consider a form that allows users to pick a favorite article including archived articles.\nclass FavoriteAriclesForm(forms.ModelForm):\n\tclass Meta:\n\t\tmodel = FavoriteArticle\n\t\tfields = '__all__'\n\tdef __init__(self, *args, **kwargs):\n\t\tsuper().__init__(*args, **kwargs)\n\t\t# Use the base manager instead of the default manager to allow archived articles.\n\t\tself.fields['article'].queryset = Article._base_manager.all()\nThe above form will never validate as True when a user selects an archived article. This is because the ForeignKey validation always uses _default_manager instead of _base_manager. The user facing error message is \"article instance with id 123 does not exist.\" (quite confusing to typical users). The code for this validation is here:\n​https://github.com/django/django/blob/94f63b926fd32d7a7b6e2591ef72aa8f040f25cc/django/db/models/fields/related.py#L917-L919\nThe FavoriteAriclesForm is specifically designed to use a different manager, but the ForeignKey validation makes this difficult.\nIn this example scenario, it is not acceptable to change the model's default manager as the default should avoid archived articles in other typical scenarios.\nSuggested solution: the ForeignKey validation should use the _base_manager instead which does not include the default filters.",
+    "constraints": [],
+    "decisions": [],
+    "evidence": [
+      {
+        "role": "tool",
+        "content": "Executed read django/db/models/fields/related.py:\nFile: django/db/models/fields/related.py (1692 lines)\n880:             kwargs['db_constraint'] = self.db_constraint\n881:         # Rel needs more work.\n882:         to_meta = getattr(self.remote_field.model, \"_meta\", None)\n883:         if self.remote_field.field_name and (\n884:                 not to_meta or (to_meta.pk and self.remote_field.field_name != to_meta.pk.name)):\n885:             kwargs['to_field'] = self.remote_field.field_name\n886:         return name, path, args, kwargs\n887: \n888:     def to_python(self, value):\n889:         return self.target_field.to_python(value)\n890: \n891:     @property\n892:     def target_field(self):\n893:         return self.foreign_related_fields[0]\n894: \n895:     def get_reverse_path_info(self, filtered_relation=None):\n896:         \"\"\"Get path from the related model to this field's model.\"\"\"\n897:         opts = self.model._meta\n898:         from_opts = self.remote_field.model._meta\n899:         return [PathInfo(\n900:             from_opts=from_opts,\n901:             to_opts=opts,\n902:             target_fields=(opts.pk,),\n903:             join_field=self.remote_field,\n904:             m2m=not self.unique,\n905:             direct=False,\n906:             filtered_relation=filtered_relation,\n907:         )]\n908: \n909:     def validate(self, value, model_instance):\n910:         if self.remote_field.parent_link:\n911:             return\n912:         super().validate(value, model_instance)\n913:         if value is None:\n914:             return\n915: \n916:         using = router.db_for_read(self.remote_field.model, instance=model_instance)\n917:         qs = self.remote_field.model._default_manager.using(using).filter(\n918:             **{self.remote_field.field_name: value}\n919:         )\n920:         qs = qs.complex_filter(self.get_limit_choices_to())\n921:         if not qs.exists():\n922:             raise exceptions.ValidationError(\n923:                 self.error_messages['invalid'],\n924:                 code='invalid',\n925:                 params={\n926:                     'model': self.remote_field.model._meta.verbose_name, 'pk': value,\n927:                     'field': self.remote_field.field_name, 'value': value,\n928:                 },  # 'pk' is included for backwards compatibility\n929:             )\n930: \n931:     def resolve_related_fields(self):\n932:         related_fields = super().resolve_related_fields()\n933:         for from_field, to_field in related_fields:\n934:             if to_field and to_field.model != self.remote_field.model._meta.concrete_model:\n935:                 raise exceptions.FieldError(\n936:                     \"'%s.%s' refers to field '%s' which is not local to model \"\n937:                     \"'%s'.\" % (\n938:                         self.model._meta.label,\n939:                         self.name,\n940:                         to_field.name,\n941:                         self.remote_field.model._meta.concrete_model._meta.label,\n942:                     )\n943:                 )\n944:         return related_fields\n945: ",
+        "kind": "evidence",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.source_id": "m3.0",
+          "handoff_sieve.source_ids": [
+            "m3.0",
+            "m3.1",
+            "m3.2"
+          ]
+        }
+      }
+    ],
+    "completed_work": [],
+    "failed_attempts": [],
+    "pending_work": [
+      {
+        "role": "assistant",
+        "content": "{\"end\":0,\"new\":\"\",\"note\":\"Investigation complete: ForeignKey.validate() in django/db/models/fields/related.py lines 909-929 selects the related model's _default_manager at lines 916-919, then applies limit_choices_to and checks exists(). The issue's proposed fix is to replace _default_manager with _base_manager while preserving router.db_for_read(), filtering by remote_field.field_name, and complex_filter(). No source edit was made because this was a research-only task. I searched tests for directly matching manager/query validation coverage but found no exact _default_manager. Relevant regression coverage should be added near existing model/form/related-field tests: define a related model with a filtered default manager and an unfiltered base manager, validate a ForeignKey form/model value that is excluded by the default manager, and assert it succeeds (while nonexistent values still fail and limit_choices_to remains enforced). Also check multi-database routing behavior and custom to_field handling; the manager swap should not alter those. Observed evidence is limited to this checkout search; no tests were executed.\",\"old\":\"\",\"operation\":\"finish\",\"path\":\"\",\"query\":\"\",\"start\":0}",
+        "kind": "pending_work",
+        "tags": [],
+        "metadata": {
+          "handoff_sieve.source_id": "m8.0"
+        }
+      }
+    ],
+    "artifacts": [],
+    "tool_results": []
+  },
+  "report": {
+    "schema_version": "1",
+    "handoff_id": "22b3546a7dbd4845b5119c93469a73d5",
+    "request_id": null,
+    "started_at": "2026-10-11T06:20:45.983775Z",
+    "completed_at": "2026-10-11T06:20:45.985372Z",
+    "duration_ms": 1.6473999712616205,
+    "status": "passed",
+    "failure_code": null,
+    "failed_policy": null,
+    "sender": "researcher",
+    "receiver": "coder",
+    "token_counter": "approx_utf8",
+    "config_fingerprint": "25d92ff20a13c4a518eb72bcf5b459dc339afcbb759b23228ba47dcc35929eb2",
+    "original_tokens": 1699,
+    "transmitted_tokens": 1699,
+    "removed_messages": 0,
+    "redactions": 0,
+    "duplicates_removed": 0,
+    "protected_messages": 0,
+    "summarizer_input_tokens": 0,
+    "summarizer_output_tokens": 0,
+    "summarizer_provider_input_tokens": null,
+    "summarizer_provider_output_tokens": null,
+    "events": [
+      {
+        "policy": "receiver_contract",
+        "policy_version": "1",
+        "action": "compiled",
+        "count": 0,
+        "details": {
+          "max_tokens": 4000,
+          "packet_tokens": 1705,
+          "required_tokens": 1705,
+          "preferred_omitted_for_budget": {}
+        }
+      },
+      {
+        "policy": "model_selector",
+        "policy_version": "1",
+        "action": "selected",
+        "count": 4,
+        "details": {
+          "source_units": 96,
+          "model_calls": 1
+        }
+      }
+    ],
+    "warnings": []
+  },
+  "source_tokens": 3574,
+  "packet_tokens": 1705,
+  "omitted_count": 92,
+  "budget": {
+    "stage": "pipeline_output",
+    "token_counter": "approx_utf8",
+    "max_tokens": 4000,
+    "required_tokens": 1705,
+    "packet_tokens": 1705,
+    "preferred_selected": {},
+    "preferred_omitted_before_pipeline": {},
+    "preferred_omitted_after_pipeline": {}
+  },
+  "selection": {
+    "source_unit_count": 96,
+    "selected_source_ids": [
+      "m3.0",
+      "m3.1",
+      "m3.2",
+      "m8.0"
+    ],
+    "budget_omitted_source_ids": [],
+    "unselected_source_ids": [
+      "m0.0",
+      "m1.0",
+      "m1.1",
+      "m2.0",
+      "m4.0",
+      "m5.0",
+      "m5.1",
+      "m6.0",
+      "m7.0",
+      "m7.1",
+      "m7.2",
+      "m7.3",
+      "m7.4",
+      "m7.5",
+      "m7.6",
+      "m7.7",
+      "m7.8",
+      "m7.9",
+      "m7.10",
+      "m7.11",
+      "m7.12",
+      "m7.13",
+      "m7.14",
+      "m7.15",
+      "m7.16",
+      "m7.17",
+      "m7.18",
+      "m7.19",
+      "m7.20",
+      "m7.21",
+      "m7.22",
+      "m7.23",
+      "m7.24",
+      "m7.25",
+      "m7.26",
+      "m7.27",
+      "m7.28",
+      "m7.29",
+      "m7.30",
+      "m7.31",
+      "m7.32",
+      "m7.33",
+      "m7.34",
+      "m7.35",
+      "m7.36",
+      "m7.37",
+      "m7.38",
+      "m7.39",
+      "m7.40",
+      "m7.41",
+      "m7.42",
+      "m7.43",
+      "m7.44",
+      "m7.45",
+      "m7.46",
+      "m7.47",
+      "m7.48",
+      "m7.49",
+      "m7.50",
+      "m7.51",
+      "m7.52",
+      "m7.53",
+      "m7.54",
+      "m7.55",
+      "m7.56",
+      "m7.57",
+      "m7.58",
+      "m7.59",
+      "m7.60",
+      "m7.61",
+      "m7.62",
+      "m7.63",
+      "m7.64",
+      "m7.65",
+      "m7.66",
+      "m7.67",
+      "m7.68",
+      "m7.69",
+      "m7.70",
+      "m7.71",
+      "m7.72",
+      "m7.73",
+      "m7.74",
+      "m7.75",
+      "m7.76",
+      "m7.77",
+      "m7.78",
+      "m7.79",
+      "m7.80",
+      "m7.81",
+      "m9.0",
+      "m9.1"
+    ],
+    "coverage": [
+      {
+        "need_index": 0,
+        "source_ids": [
+          "m3.2",
+          "m8.0"
+        ]
+      },
+      {
+        "need_index": 1,
+        "source_ids": [
+          "m8.0"
+        ]
+      }
+    ],
+    "context_source_ids": [
+      "m3.0",
+      "m3.1"
+    ]
+  },
+  "plan": {
+    "selections": [
+      {
+        "source_id": "m3.2",
+        "section": "evidence",
+        "essential": true
+      },
+      {
+        "source_id": "m8.0",
+        "section": "pending_work",
+        "essential": true
+      }
+    ],
+    "coverage": [
+      {
+        "need_index": 0,
+        "source_ids": [
+          "m3.2",
+          "m8.0"
+        ]
+      },
+      {
+        "need_index": 1,
+        "source_ids": [
+          "m8.0"
+        ]
+      }
+    ],
+    "missing_needs": []
+  },
+  "selector_usage": {
+    "model": "gpt-5.6-sol",
+    "response_id": "resp_01ecee1cc063288d016acb2aabca1481998f981b6a939c99fe",
+    "input_tokens": 6204,
+    "output_tokens": 361,
+    "total_tokens": 6565,
+    "seconds": 19.590216499986127,
+    "model_calls": 1
+  }
+}
