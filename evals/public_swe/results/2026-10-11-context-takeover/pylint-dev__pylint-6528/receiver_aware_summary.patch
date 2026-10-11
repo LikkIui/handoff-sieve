@@ -1,0 +1,52 @@
+diff --git a/pylint/lint/pylinter.py b/pylint/lint/pylinter.py
+index 53345a6..c93d4bf 100644
+--- a/pylint/lint/pylinter.py
++++ b/pylint/lint/pylinter.py
+@@ -564,8 +564,18 @@ class PyLinter(
+             if not msg.may_be_emitted():
+                 self._msgs_state[msg.msgid] = False
+ 
+-    @staticmethod
+-    def _discover_files(files_or_modules: Sequence[str]) -> Iterator[str]:
++    def _is_ignored(self, path: str) -> bool:
++        """Return whether a discovered path matches the configured ignore options."""
++        return (
++            os.path.basename(path) in self.config.ignore
++            or any(
++                pattern.match(os.path.basename(path))
++                for pattern in self.config.ignore_patterns
++            )
++            or any(pattern.match(path) for pattern in self._ignore_paths)
++        )
++
++    def _discover_files(self, files_or_modules: Sequence[str]) -> Iterator[str]:
+         """Discover python modules and packages in sub-directory.
+ 
+         Returns iterator of paths to discovered modules and packages.
+@@ -575,10 +585,17 @@ class PyLinter(
+                 os.path.join(something, "__init__.py")
+             ):
+                 skip_subtrees: list[str] = []
+-                for root, _, files in os.walk(something):
++                for root, dirs, files in os.walk(something):
++                    if self._is_ignored(root):
++                        dirs[:] = []
++                        continue
+                     if any(root.startswith(s) for s in skip_subtrees):
+                         # Skip subtree of already discovered package.
++                        dirs[:] = []
+                         continue
++                    dirs[:] = [directory for directory in dirs if not self._is_ignored(
++                        os.path.join(root, directory)
++                    )]
+                     if "__init__.py" in files:
+                         skip_subtrees.append(root)
+                         yield root
+@@ -587,6 +604,7 @@ class PyLinter(
+                             os.path.join(root, file)
+                             for file in files
+                             if file.endswith(".py")
++                            and not self._is_ignored(os.path.join(root, file))
+                         )
+             else:
+                 yield something
