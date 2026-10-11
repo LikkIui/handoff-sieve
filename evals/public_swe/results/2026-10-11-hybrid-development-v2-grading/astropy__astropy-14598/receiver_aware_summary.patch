@@ -1,0 +1,34 @@
+diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py
+index 1b3285d..3aada79 100644
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -64,7 +64,7 @@ class Card(_Verify):
+ 
+     # Used in cards using the CONTINUE convention which expect a string
+     # followed by an optional comment
+-    _strg = r"\'(?P<strg>([ -~]+?|\'\'|) *?)\'(?=$|/| )"
++    _strg = r"\'(?P<strg>(?:[ -&(-~]|\'\')*? *)\'(?=$|/| )"
+     _comm_field = r"(?P<comm_field>(?P<sepr>/ *)(?P<comm>(.|\n)*))"
+     _strg_comment_RE = re.compile(f"({_strg})? *{_comm_field}?")
+ 
+@@ -859,7 +859,6 @@ class Card(_Verify):
+                     return kw, vc
+ 
+                 value = m.group("strg") or ""
+-                value = value.rstrip().replace("''", "'")
+                 if value and value[-1] == "&":
+                     value = value[:-1]
+                 values.append(value)
+@@ -871,7 +870,11 @@ class Card(_Verify):
+                 valuecomment = "".join(values)
+             else:
+                 # CONTINUE card
+-                valuecomment = f"'{''.join(values)}' / {' '.join(comments)}"
++                # Unescape quotes only after joining the pieces.  Doing this
++                # per card loses information when an escaped quote pair is
++                # split at a CONTINUE boundary.
++                joined = "".join(values).replace("''", "'")
++                valuecomment = "'{}' / {}".format(joined, " ".join(comments))
+             return keyword, valuecomment
+ 
+         if self.keyword in self._special_keywords:

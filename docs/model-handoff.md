@@ -1,5 +1,9 @@
 # Model-assisted handoff: select original state for the next task
 
+For a concise generated receiver brief with host-copied original evidence,
+see [hybrid handoff](hybrid-handoff.md). This page describes the earlier
+original-only extraction path, which remains available independently.
+
 The opt-in model path reads ordinary, unlabeled history and selects original
 text spans for the receiver's goal. It is designed for mixed task histories,
 superseded decisions, failed approaches, and evidence that appears too late

@@ -1,0 +1,50 @@
+diff --git a/sympy/sets/handlers/intersection.py b/sympy/sets/handlers/intersection.py
+index c54dc8f..9e71c63 100644
+--- a/sympy/sets/handlers/intersection.py
++++ b/sympy/sets/handlers/intersection.py
+@@ -303,12 +303,17 @@ def intersection_sets(self, other): # noqa:F811
+         elif ifree != {n}:
+             return None
+         else:
+-            # univarite imaginary part in same variable
+-            x, xis = zip(*[solve_linear(i, 0) for i in Mul.make_args(im) if n in i.free_symbols])
+-            if x and all(i == n for i in x):
+-                base_set -= FiniteSet(xis)
++            # Solve the full reality condition over the integer base set.
++            # Solving each factor independently incorrectly removes roots
++            # rather than retaining the values for which the image is real.
++            from sympy.solvers.solveset import solveset
++            real_values = solveset(im, n, domain=S.Integers)
++            if real_values is S.EmptySet:
++                return S.EmptySet
++            if real_values.is_FiniteSet:
++                base_set = base_set.intersect(real_values)
+             else:
+-                base_set -= ConditionSet(n, Eq(im, 0), S.Integers)
++                base_set = base_set.intersect(ConditionSet(n, Eq(im, 0), S.Integers))
+         # exclude values that make denominators 0
+         for i in denoms(f):
+             if i.has(n):
+diff --git a/sympy/sets/tests/test_fancysets.py b/sympy/sets/tests/test_fancysets.py
+index 098020c..fffc7f9 100644
+--- a/sympy/sets/tests/test_fancysets.py
++++ b/sympy/sets/tests/test_fancysets.py
+@@ -1081,9 +1081,16 @@ def test_issue_16871b():
+     assert ImageSet(Lambda(x, x - 3), S.Integers).is_subset(S.Integers)
+ 
+ 
++
++
++def test_issue_19513():
++    s = imageset(Lambda(x, x + (x - 1)*(x + 1)*I), S.Integers)
++    assert 2 not in s
++    assert 2 not in s.intersect(S.Reals)
++    assert s.intersect(S.Reals) == FiniteSet(-1, 1)
++
++
+ def test_issue_18050():
+-    assert imageset(Lambda(x, I*x + 1), S.Integers
+-        ) == ImageSet(Lambda(x, I*x + 1), S.Integers)
+     assert imageset(Lambda(x, 3*I*x + 4 + 8*I), S.Integers
+         ) == ImageSet(Lambda(x, 3*I*x + 4 + 2*I), S.Integers)
+     # no 'Mod' for next 2 tests:

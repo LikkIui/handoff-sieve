@@ -1,0 +1,45 @@
+diff --git a/sympy/sets/handlers/intersection.py b/sympy/sets/handlers/intersection.py
+index c54dc8f..4aa3354 100644
+--- a/sympy/sets/handlers/intersection.py
++++ b/sympy/sets/handlers/intersection.py
+@@ -303,12 +303,17 @@ def intersection_sets(self, other): # noqa:F811
+         elif ifree != {n}:
+             return None
+         else:
+-            # univarite imaginary part in same variable
+-            x, xis = zip(*[solve_linear(i, 0) for i in Mul.make_args(im) if n in i.free_symbols])
+-            if x and all(i == n for i in x):
+-                base_set -= FiniteSet(xis)
+-            else:
+-                base_set -= ConditionSet(n, Eq(im, 0), S.Integers)
++            # Solve the condition on the integer parameter as a whole.  Solving
++            # each multiplicative factor separately with solve_linear loses
++            # solutions when the imaginary part is a product (and can leave
++            # the original base set unchanged).
++            from sympy.solvers.solveset import solveset
++            solutions = solveset(im, n, S.Integers)
++            if solutions is S.EmptySet:
++                return S.EmptySet
++            if isinstance(solutions, (ImageSet, ConditionSet)):
++                return None
++            base_set = base_set.intersect(solutions)
+         # exclude values that make denominators 0
+         for i in denoms(f):
+             if i.has(n):
+diff --git a/sympy/sets/tests/test_fancysets.py b/sympy/sets/tests/test_fancysets.py
+index 098020c..2a397cb 100644
+--- a/sympy/sets/tests/test_fancysets.py
++++ b/sympy/sets/tests/test_fancysets.py
+@@ -1081,6 +1081,12 @@ def test_issue_16871b():
+     assert ImageSet(Lambda(x, x - 3), S.Integers).is_subset(S.Integers)
+ 
+ 
++def test_issue_19513():
++    image = ImageSet(Lambda(x, x + (x - 1)*(x + 1)*I), S.Integers)
++    assert 2 not in image.intersect(S.Reals)
++    assert image.intersect(S.Reals) == FiniteSet(-1, 1)
++
++
+ def test_issue_18050():
+     assert imageset(Lambda(x, I*x + 1), S.Integers
+         ) == ImageSet(Lambda(x, I*x + 1), S.Integers)

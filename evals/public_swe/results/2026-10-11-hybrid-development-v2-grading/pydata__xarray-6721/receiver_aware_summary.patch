@@ -1,0 +1,57 @@
+diff --git a/xarray/core/common.py b/xarray/core/common.py
+index 3c328f4..1b316de 100644
+--- a/xarray/core/common.py
++++ b/xarray/core/common.py
+@@ -2023,14 +2023,45 @@ def get_chunksizes(
+ 
+     chunks: dict[Any, tuple[int, ...]] = {}
+     for v in variables:
+-        if hasattr(v.data, "chunks"):
+-            for dim, c in v.chunksizes.items():
+-                if dim in chunks and c != chunks[dim]:
+-                    raise ValueError(
+-                        f"Object has inconsistent chunks along dimension {dim}. "
+-                        "This can be fixed by calling unify_chunks()."
++        # Backend arrays may be lazy without being duck arrays (e.g. Zarr).
++        # Inspect their chunk metadata in encoding rather than accessing .data,
++        # which can coerce the backend array and read all its values.
++        if hasattr(v._data, "chunks"):
++            variable_chunks = {
++                dim: c for dim, c in zip(v.dims, v._data.chunks)
++            }
++        else:
++            encoding = v.encoding
++            encoded_chunks = encoding.get("chunks")
++            if encoded_chunks is None:
++                preferred_chunks = encoding.get("preferred_chunks", {})
++                encoded_chunks = tuple(
++                    preferred_chunks.get(dim, size)
++                    for dim, size in zip(v.dims, v.shape)
++                    if dim in preferred_chunks
++                )
++                encoded_dims = tuple(
++                    dim for dim in v.dims if dim in preferred_chunks
++                )
++            else:
++                if isinstance(encoded_chunks, int):
++                    encoded_chunks = (encoded_chunks,) * v.ndim
++                encoded_dims = v.dims
++
++            variable_chunks = {}
++            for dim, size, chunk in zip(encoded_dims, v.shape, encoded_chunks):
++                if chunk:
++                    variable_chunks[dim] = tuple(
++                        (chunk,) * (size // chunk)
++                        + ((size % chunk,) if size % chunk else ())
+                     )
+-                chunks[dim] = c
++        for dim, c in variable_chunks.items():
++            if dim in chunks and c != chunks[dim]:
++                raise ValueError(
++                    f"Object has inconsistent chunks along dimension {dim}. "
++                    "This can be fixed by calling unify_chunks()."
++                )
++            chunks[dim] = c
+     return Frozen(chunks)
+ 
+ 
