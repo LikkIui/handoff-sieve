@@ -44,8 +44,13 @@ extra. No compression model, GPU, vector database, or extra service is needed.
 2. The compiler makes a catalog of original source units. Ordinary message
    text is split at nonblank lines; fenced code blocks stay together. Artifacts
    and structured message/tool values remain atomic. Source order stays visible.
+   Tool reads with a `File: path (N lines)` header and consecutive numbered
+   source lines use contiguous windows of at most 40 lines. Selecting a window
+   also keeps its observed file header and enclosing blocks. This preserves
+   available context; it never fetches or invents an unobserved declaration.
    Host-only character offsets and indices are retained locally but omitted
    from the selector payload; nonempty task hints and metadata remain visible.
+   The OpenAI payload shares repeated message metadata across its units.
 3. One selector call returns source IDs, categories, essential flags, ranked
    optional selections, and source references covering each need. It does not
    generate the task facts or edit the sender's code. The OpenAI backend's
@@ -56,6 +61,10 @@ extra. No compression model, GPU, vector database, or extra service is needed.
    snapshot, preserves essential/need-covered items, and fits optional items
    into the actual rendered packet budget. Unknown IDs, missing coverage,
    absent required sections, and essential overflow fail explicitly.
+   A window and its context fit together or are omitted together. Adjacent
+   selected spans in the same section are merged in original source order;
+   `handoff_sieve.source_ids` retains their individual references. Automatically
+   retained context appears in `selection.context_source_ids`.
 5. The existing cleanup pipeline and packet adapters deliver that packet.
    Every fitted item is protected from destructive cleanup. Redaction or
    caller-supplied transforms can still modify its content and are reported.
