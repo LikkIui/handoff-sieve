@@ -312,7 +312,8 @@ def run_condition(
             )
         script = (
             "source /opt/miniconda3/etc/profile.d/conda.sh && "
-            "conda activate testbed && cd /testbed && exec " + shlex.join(task.command)
+            "conda activate testbed && export LANG=C.UTF-8 LC_ALL=C.UTF-8 && "
+            "cd /testbed && exec " + shlex.join(task.command)
         )
         report.update(
             status="tested",
@@ -335,6 +336,21 @@ def run_condition(
 
 def run_task(task: TaskRequest, client: Any, *, timeout: int) -> dict[str, Any]:
     image = client.images.pull(task.image)
+    source_image = image
+    overrides = {}
+    if task.instance_id == "sphinx-doc__sphinx-7748":
+        # The original tox.ini supports docutils 0.12--0.16. The upstream image
+        # currently includes a newer incompatible version. Fix the environment
+        # for every condition, without touching source or dropping any test.
+        dockerfile = (
+            f"FROM {image.id}\n"
+            "RUN /opt/miniconda3/envs/testbed/bin/python -m pip install "
+            "--disable-pip-version-check --no-deps docutils==0.16\n"
+        )
+        image, _ = client.images.build(
+            fileobj=io.BytesIO(dockerfile.encode("utf-8")), rm=True
+        )
+        overrides = {"docutils": "0.16"}
     candidates = (Candidate("unchanged_source", "", b""), *task.candidates)
     outcomes = {
         candidate.condition: run_condition(
@@ -354,7 +370,10 @@ def run_task(task: TaskRequest, client: Any, *, timeout: int) -> dict[str, Any]:
         "base_commit": task.base_commit,
         "image": task.image,
         "image_id": image.id,
-        "image_digests": image.attrs.get("RepoDigests", []),
+        "image_digests": source_image.attrs.get("RepoDigests", []),
+        "original_image_id": source_image.id,
+        "runtime_dependency_overrides": overrides,
+        "locale": "C.UTF-8",
         "command": list(task.command),
         "baseline_valid": baseline_valid,
         "feedback_scope": "Original repository tests only; not hidden task acceptance",
