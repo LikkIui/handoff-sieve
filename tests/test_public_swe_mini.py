@@ -29,8 +29,10 @@ def test_original_test_action_cannot_supply_an_arbitrary_command() -> None:
         mini_receiver.parse_receiver_action(json.dumps(action("test")))["operation"]
         == "test"
     )
-    with pytest.raises(ValueError, match="no paths"):
-        mini_receiver.parse_receiver_action(json.dumps(action("test", path="/eval.sh")))
+    parsed = mini_receiver.parse_receiver_action(
+        json.dumps(action("test", path="/eval.sh"))
+    )
+    assert parsed["path"] == "/eval.sh"  # validated by the execution tool
     with pytest.raises(ValueError, match="fields"):
         mini_receiver.parse_receiver_action(
             json.dumps({**action("test"), "command": "bash"})
@@ -114,6 +116,10 @@ def test_original_tests_stay_unchanged_and_test_calls_are_bounded(
     )
     assert "unchanged" in edit["error"]
     assert original.read_text(encoding="utf-8") == "value = 1\n"
+    invalid = env.execute(action("test", path="/eval.sh"))
+    assert "empty unused fields" in invalid["error"]
+    assert env.test_requests == 0 and patches == []
+    assert "at least one" in env.execute(action("finish"))["error"]
     assert env.execute(action("test"))["test"]["exit_code"] == 1
     assert "exhausted" in env.execute(action("test"))["error"]
     assert patches == [b"candidate patch"]
