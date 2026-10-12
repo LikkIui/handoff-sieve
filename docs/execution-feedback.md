@@ -85,3 +85,11 @@ reuses the same already-used sender states and prepared contexts for all three
 conditions, with fresh candidate generation. The controller, prompt and step
 semantics differ from the older run, so the two runs cannot be pooled or used to
 attribute all changes solely to test feedback. Formal 200 tasks remain unused.
+
+The [primary official results](../evals/public_swe/results/2026-10-12-mini-takeover-v1-grading/README.md)
+are 0/2 in every condition. The
+[separate correction](../evals/public_swe/results/2026-10-12-mini-takeover-v2-grading/README.md)
+retains a provider failure and does not replace the initial interface failures.
+The next step is one public-issue reproduction spanning the handoff: researcher
+records its real failure; the packet preserves the script artifact, command and
+expected behavior; the coder reruns it after editing, alongside original tests.

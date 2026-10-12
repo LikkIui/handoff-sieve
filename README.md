@@ -61,6 +61,15 @@ including preparation, while its packet was **31.5% larger**. This is a small
 development diagnostic; quality superiority remains unproven. Public bundles
 contain patches and metrics; complete API payloads remain local.
 
+The [execution-feedback follow-up](evals/public_swe/results/2026-10-12-mini-takeover-v1-grading/README.md)
+now uses the pinned mini-swe-agent controller and each receiver's own original
+test output. On two previously failing development cases, all three conditions
+still resolve **0/2**. Syntax and test-interface checks do not establish the new
+issue behavior. A separate correction retains an additional provider failure.
+The next step is a public-issue reproduction carried across researcher → coder
+handoff, not a larger benchmark or more adapters. See the
+[optional execution bridge](docs/execution-feedback.md).
+
 The earlier **extractive handoff** remains available for original-only views:
 
 For ordinary mixed history, a model can now select context by the receiver's

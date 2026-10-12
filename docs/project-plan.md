@@ -11,7 +11,28 @@
 > 当前定位是 receiver-specific context / handoff optimization；本文后续的安全加固内容
 > 仅是已完成的底层能力，不代表当前产品主线或近期待办。
 
-## 最新接管状态（2026-10-11）
+## 最新接管状态（2026-10-12）
+
+已直接使用固定 SHA 的 mini-swe-agent 原始 DefaultAgent 控制循环，接入本地源码操作
+和各组自己的原项目可见测试反馈。默认自由 Bash 环境未接入，不增加 core 依赖或 adapter。
+Django 680 项、Sphinx 67 项原始测试在统一 UTF-8 / docutils 0.16 环境中通过未改源码控制；
+首次环境预检失败保留，没有删测试。初轮 6 次全新接管共 103 次 API、994,529 个报告
+token，官方验收三组均为 0/2。两个 hybrid 接收方在测试参数校验处中止，保留在分母。
+接口已修为实际工具错误反馈；独立 2 次修正接管新增 29 次请求、304,869 个报告 token，
+一次网关失败没有 usage，未自动重试。原任务仍未通过，基线补丁复用，不当作新基线 trial。
+
+本轮合计 132 次请求、131 次完成、1,299,398 个已报告 token；全部官方正反控制有效。
+6 份主试验补丁能进入官方测试，但既有回归测试通过后仍未解决新行为，不能宣称质量提升。
+470 项回归通过。完整 API 记录留本地，只公开补丁、指标与评分；两批结果见
+[执行反馈主试验](../evals/public_swe/results/2026-10-12-mini-takeover-v1-grading/README.md)和
+[独立接口修正](../evals/public_swe/results/2026-10-12-mini-takeover-v2-grading/README.md)。
+
+紧接着做：让 researcher 根据公开 issue 创建并运行复现脚本，记录实际失败和预期行为；
+HandoffPacket 保留脚本 artifact、运行命令和观测，coder 修改后重跑同一个复现及原回归
+测试。目标是把可验证的工作状态传过去，减少重复猜测。继续用已用开发题诊断，正式 200
+题不启动，不扩 adapter。
+
+### 10 月 11 日混合交接记录（保留原结果）
 
 本轮新增可选混合交接核心：简短接管说明 + 程序按来源行范围复制的必要原文，仍使用
 现有 Contract 和 Packet。`OpenAIHybridHandoffFilter` 从当前 SDK 快照编译；真实模型

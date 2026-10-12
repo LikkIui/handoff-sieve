@@ -100,6 +100,16 @@ the implementation and experiment settings are frozen.
 
 ## Completed development evidence
 
+- [mini controller with original-test feedback](results/2026-10-12-mini-takeover-v1-grading/README.md):
+  six fresh episodes on two already-used failing tasks, 103 real requests;
+  every condition remains 0/2 in official acceptance. Two hybrid test-argument
+  interface failures are retained. The
+  [separate interface correction](results/2026-10-12-mini-takeover-v2-grading/README.md)
+  adds two hybrid episodes and 29 requests, with reused baselines and one provider
+  failure without usage. No result replacement, cost saving or stable advantage
+  is claimed. The actual pinned mini controller is used with bounded source
+  tools; its default unrestricted Bash environment is not used. The next step
+  is public-issue reproduction before and after edits, shared across conditions.
 - [Fresh eight-task hybrid comparison](results/2026-10-11-hybrid-development-v2-grading/README.md):
   full history 3/8, strong summary 4/8, hybrid 3/8; all official controls valid.
   One hybrid preparation failure prevented a receiver start and stays in the
