@@ -58,7 +58,9 @@ the current patch bytes and returns a verified exit status and bounded output:
 ```python
 from pathlib import Path
 from evals.public_swe.mini_receiver import (
-    MiniReceiverEnvironment, MiniReceiverModel, run_mini_receiver,
+    MiniReceiverEnvironment,
+    MiniReceiverModel,
+    run_mini_receiver,
 )
 
 model = MiniReceiverModel(client, "YOUR_MODEL", Path("outputs/mini/calls"))
