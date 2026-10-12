@@ -74,6 +74,7 @@ class MiniReceiverModel:
 
     def usage(self) -> dict[str, int]:
         values = [r.get("response", {}).get("usage", {}) for r in self.records]
+        values = [value if isinstance(value, dict) else {} for value in values]
         return {
             "requests": len(self.records),
             "completed_requests": sum(r["status"] == "completed" for r in self.records),

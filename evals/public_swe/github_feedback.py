@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib
 import io
 import json
 import re
@@ -16,8 +17,6 @@ import time
 import zipfile
 from pathlib import Path
 from typing import Any
-
-import httpx
 
 from .visible import MAX_PATCH_BYTES, VISIBLE_PROFILES
 
@@ -45,6 +44,7 @@ class GitHubVisibleFeedback:
         self.base_sha = base_sha
         self.output = output
         self.wait_seconds = wait_seconds
+        httpx = importlib.import_module("httpx")
         self.client = httpx.Client(
             timeout=90,
             proxy=proxy,
