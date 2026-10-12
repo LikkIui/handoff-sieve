@@ -39,6 +39,44 @@ PYLINT_COMMAND = (
 MAX_PATCH_BYTES = 2_000_000
 MAX_OUTPUT_BYTES = 16_000
 
+# These broad suites are chosen from original repository source, not evaluator
+# case names. Every condition receives the same frozen command and source tree.
+VISIBLE_PROFILES = {
+    PYLINT_TASK: (
+        "pylint-dev/pylint",
+        PYLINT_IMAGE,
+        PYLINT_COMMAND,
+        ("tests/test_self.py",),
+    ),
+    "django__django-13212": (
+        "django/django",
+        "swebench/sweb.eval.x86_64.django_1776_django-13212",
+        (
+            "python",
+            "tests/runtests.py",
+            "forms_tests",
+            "--verbosity",
+            "1",
+            "--parallel",
+            "1",
+        ),
+        ("tests/runtests.py", "tests/forms_tests"),
+    ),
+    "sphinx-doc__sphinx-7748": (
+        "sphinx-doc/sphinx",
+        "swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-7748",
+        (
+            "python",
+            "-m",
+            "pytest",
+            "-q",
+            "tests/test_ext_autodoc.py",
+            "tests/test_ext_autodoc_configs.py",
+        ),
+        ("tests/test_ext_autodoc.py", "tests/test_ext_autodoc_configs.py"),
+    ),
+}
+
 
 @dataclass(frozen=True)
 class Candidate:
@@ -102,17 +140,18 @@ def load_request(value: str, *, repository: Path = REPOSITORY) -> list[TaskReque
         if task_id in seen or task_id not in manifest["splits"]["development"]:
             raise ValueError("Duplicate or non-development task")
         seen.add(task_id)
-        if task_id != PYLINT_TASK or item["command"] != list(PYLINT_COMMAND):
+        profile = VISIBLE_PROFILES.get(task_id)
+        if profile is None or item["command"] != list(profile[2]):
             raise ValueError(
-                "Only the frozen original Pylint test command is supported"
+                "Only a frozen original repository test command is supported"
             )
-        image = item.get("image", PYLINT_IMAGE + ":latest")
-        if image != PYLINT_IMAGE + ":latest" and not re.fullmatch(
-            re.escape(PYLINT_IMAGE) + r"@sha256:[0-9a-f]{64}", image
+        image = item.get("image", profile[1] + ":latest")
+        if image != profile[1] + ":latest" and not re.fullmatch(
+            re.escape(profile[1]) + r"@sha256:[0-9a-f]{64}", image
         ):
             raise ValueError("Use the original official image or its recorded digest")
         task = public_tasks[task_id]
-        if task["repo"] != "pylint-dev/pylint" or not re.fullmatch(
+        if task["repo"] != profile[0] or not re.fullmatch(
             r"[0-9a-f]{40}", task["base_commit"]
         ):
             raise ValueError("Unexpected public task source metadata")
@@ -147,7 +186,7 @@ def load_request(value: str, *, repository: Path = REPOSITORY) -> list[TaskReque
                 task["repo"],
                 task["base_commit"],
                 image,
-                PYLINT_COMMAND,
+                profile[2],
                 tuple(candidates),
             )
         )
@@ -253,9 +292,13 @@ def run_condition(
         if _check(container, ["git", "status", "--porcelain"]):
             raise ValueError("Image source checkout is not clean")
         report["base_commit_verified"] = True
-        report["visible_test_blob"] = _check(
-            container, ["git", "rev-parse", "HEAD:tests/test_self.py"]
-        )
+        test_paths = VISIBLE_PROFILES[task.instance_id][3]
+        report["visible_test_blobs"] = {
+            path: _check(container, ["git", "rev-parse", "HEAD:" + path])
+            for path in test_paths
+        }
+        if task.instance_id == PYLINT_TASK:
+            report["visible_test_blob"] = report["visible_test_blobs"][test_paths[0]]
         if candidate.patch:
             _copy_patch(container, candidate.patch)
             _check(

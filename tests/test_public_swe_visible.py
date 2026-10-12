@@ -72,6 +72,30 @@ def test_visible_request_only_uses_public_development_metadata(tmp_path: Path) -
     assert task.command == visible.PYLINT_COMMAND
 
 
+@pytest.mark.parametrize("task_id", ["django__django-13212", "sphinx-doc__sphinx-7748"])
+def test_new_profiles_keep_frozen_original_tests_and_public_source(
+    tmp_path: Path, task_id: str
+) -> None:
+    path, request = request_fixture(tmp_path)
+    root = tmp_path / "evals/public_swe"
+    profile = visible.VISIBLE_PROFILES[task_id]
+    (root / "data/manifest.json").write_text(
+        json.dumps({"splits": {"development": [task_id]}}), encoding="utf-8"
+    )
+    (root / "data/development.jsonl").write_text(
+        json.dumps({"instance_id": task_id, "repo": profile[0], "base_commit": BASE}),
+        encoding="utf-8",
+    )
+    request["tasks"][0].update(instance_id=task_id, command=list(profile[2]))
+    task = load_fixture(tmp_path, request, path)[0]
+    assert task.repo == profile[0]
+    assert task.image == profile[1] + ":latest"
+    assert task.command == profile[2]
+    request["tasks"][0]["command"] += ["--changed-after-seeing-feedback"]
+    with pytest.raises(ValueError, match="frozen original"):
+        load_fixture(tmp_path, request, path)
+
+
 @pytest.mark.parametrize(
     "change", ["held_out", "command", "hidden_fields", "duplicate"]
 )
